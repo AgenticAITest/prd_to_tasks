@@ -1,0 +1,110 @@
+{
+  "namingConventions": {
+    "tables": {
+      "case": "snake_case",
+      "pluralization": "plural",
+      "prefix": "",
+      "examples": ["users", "order_items", "product_categories"]
+    },
+    "columns": {
+      "case": "snake_case",
+      "examples": ["first_name", "created_at", "is_active"]
+    },
+    "foreignKeys": {
+      "pattern": "fk_{table}_{column}",
+      "columnPattern": "{referenced_table}_id",
+      "examples": ["user_id", "order_id", "category_id"]
+    },
+    "indexes": {
+      "pattern": "idx_{table}_{columns}",
+      "uniquePattern": "uniq_{table}_{columns}",
+      "examples": ["idx_users_email", "uniq_products_sku"]
+    },
+    "constraints": {
+      "primaryKey": "pk_{table}",
+      "check": "chk_{table}_{name}",
+      "unique": "uniq_{table}_{columns}"
+    }
+  },
+  "auditFields": {
+    "createdAt": {
+      "name": "created_at",
+      "type": "timestamp",
+      "nullable": false,
+      "default": "CURRENT_TIMESTAMP"
+    },
+    "createdBy": {
+      "name": "created_by",
+      "type": "uuid",
+      "nullable": true,
+      "reference": "users.id"
+    },
+    "updatedAt": {
+      "name": "updated_at",
+      "type": "timestamp",
+      "nullable": false,
+      "default": "CURRENT_TIMESTAMP",
+      "onUpdate": "CURRENT_TIMESTAMP"
+    },
+    "updatedBy": {
+      "name": "updated_by",
+      "type": "uuid",
+      "nullable": true,
+      "reference": "users.id"
+    }
+  },
+  "softDelete": {
+    "enabled": true,
+    "deletedAt": {
+      "name": "deleted_at",
+      "type": "timestamp",
+      "nullable": true
+    },
+    "deletedBy": {
+      "name": "deleted_by",
+      "type": "uuid",
+      "nullable": true,
+      "reference": "users.id"
+    }
+  },
+  "versioning": {
+    "enabled": false,
+    "field": {
+      "name": "version",
+      "type": "integer",
+      "default": 1
+    }
+  },
+  "idGeneration": {
+    "strategy": "uuid",
+    "alternatives": ["serial", "bigserial", "ulid"],
+    "uuidVersion": "v4"
+  },
+  "dataTypes": {
+    "string": {
+      "default": "varchar(255)",
+      "short": "varchar(50)",
+      "medium": "varchar(255)",
+      "long": "varchar(1000)",
+      "text": "text"
+    },
+    "decimal": {
+      "currency": "decimal(18,2)",
+      "percentage": "decimal(5,2)",
+      "quantity": "decimal(18,4)",
+      "rate": "decimal(10,6)"
+    },
+    "temporal": {
+      "date": "date",
+      "time": "time",
+      "datetime": "timestamp",
+      "timestamp": "timestamp with time zone"
+    }
+  },
+  "requiredIndexes": {
+    "foreignKeys": true,
+    "statusFields": true,
+    "dateFields": ["created_at", "updated_at"],
+    "commonSearchFields": ["email", "phone", "name"]
+  }
+}
