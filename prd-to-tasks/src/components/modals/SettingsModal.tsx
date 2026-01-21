@@ -106,8 +106,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     setShowKeys((s) => ({ ...s, [provider]: !s[provider] }));
   };
 
+  if (!open) return null;
+
   return (
-    <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>

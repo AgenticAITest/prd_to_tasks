@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Toaster } from 'sonner';
 import { Header } from './Header';
 import { ThreeColumnLayout } from './ThreeColumnLayout';
@@ -16,15 +16,17 @@ export function AppLayout() {
   const hasValidApiKey = useSettingsStore((s) => s.hasValidApiKey());
   const initializeFromEnv = useSettingsStore((s) => s.initializeFromEnv);
   const { activeModal, openModal } = useUIStore();
+  const hasShownSetupModal = useRef(false);
 
   // Initialize API keys from environment variables on startup
   useEffect(() => {
     initializeFromEnv();
   }, [initializeFromEnv]);
 
-  // Show first-time setup modal if no API keys configured
+  // Show first-time setup modal if no API keys configured (only once on initial load)
   useEffect(() => {
-    if (!hasValidApiKey) {
+    if (!hasValidApiKey && !hasShownSetupModal.current) {
+      hasShownSetupModal.current = true;
       openModal('first-time-setup');
     }
   }, [hasValidApiKey, openModal]);
