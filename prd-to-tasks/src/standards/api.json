@@ -1,0 +1,169 @@
+{
+  "versioning": {
+    "strategy": "url",
+    "prefix": "/api/v1",
+    "headerName": "X-API-Version"
+  },
+  "resourceNaming": {
+    "style": "kebab-case",
+    "pluralization": "plural",
+    "examples": {
+      "list": "GET /api/v1/users",
+      "detail": "GET /api/v1/users/{id}",
+      "create": "POST /api/v1/users",
+      "update": "PUT /api/v1/users/{id}",
+      "partialUpdate": "PATCH /api/v1/users/{id}",
+      "delete": "DELETE /api/v1/users/{id}"
+    }
+  },
+  "nestedResources": {
+    "maxDepth": 2,
+    "examples": [
+      "GET /api/v1/users/{userId}/orders",
+      "GET /api/v1/orders/{orderId}/items"
+    ]
+  },
+  "queryParameters": {
+    "pagination": {
+      "pageSize": "limit",
+      "pageNumber": "page",
+      "offset": "offset",
+      "defaultPageSize": 20,
+      "maxPageSize": 100
+    },
+    "sorting": {
+      "parameter": "sort",
+      "format": "field:direction",
+      "directions": ["asc", "desc"],
+      "examples": ["sort=created_at:desc", "sort=name:asc,id:desc"]
+    },
+    "filtering": {
+      "style": "field[operator]=value",
+      "operators": {
+        "eq": "equals",
+        "ne": "not equals",
+        "gt": "greater than",
+        "gte": "greater than or equal",
+        "lt": "less than",
+        "lte": "less than or equal",
+        "like": "contains",
+        "in": "in list",
+        "between": "between range"
+      },
+      "examples": [
+        "status[eq]=active",
+        "price[gte]=100",
+        "name[like]=john",
+        "category_id[in]=1,2,3"
+      ]
+    },
+    "search": {
+      "parameter": "q",
+      "description": "Full-text search across searchable fields"
+    },
+    "fields": {
+      "parameter": "fields",
+      "description": "Sparse fieldsets",
+      "example": "fields=id,name,email"
+    },
+    "include": {
+      "parameter": "include",
+      "description": "Related resources to include",
+      "example": "include=orders,profile"
+    }
+  },
+  "requestHeaders": {
+    "required": [
+      {
+        "name": "Content-Type",
+        "value": "application/json"
+      }
+    ],
+    "authentication": {
+      "name": "Authorization",
+      "format": "Bearer {token}"
+    },
+    "optional": [
+      {
+        "name": "Accept-Language",
+        "default": "en"
+      },
+      {
+        "name": "X-Request-ID",
+        "description": "Correlation ID for request tracing"
+      }
+    ]
+  },
+  "responseFormat": {
+    "envelope": true,
+    "structure": {
+      "success": {
+        "data": "Response payload",
+        "meta": "Metadata (pagination, etc.)"
+      },
+      "error": {
+        "error": {
+          "code": "Error code",
+          "message": "Human-readable message",
+          "details": "Additional error details",
+          "field": "Field name (for validation errors)"
+        }
+      }
+    },
+    "pagination": {
+      "meta": {
+        "total": "Total records",
+        "page": "Current page",
+        "limit": "Page size",
+        "totalPages": "Total pages",
+        "hasNext": "Has next page",
+        "hasPrev": "Has previous page"
+      }
+    }
+  },
+  "statusCodes": {
+    "success": {
+      "200": "OK - Request succeeded",
+      "201": "Created - Resource created",
+      "204": "No Content - Request succeeded with no response body"
+    },
+    "clientError": {
+      "400": "Bad Request - Invalid request syntax",
+      "401": "Unauthorized - Authentication required",
+      "403": "Forbidden - Permission denied",
+      "404": "Not Found - Resource not found",
+      "409": "Conflict - Resource conflict",
+      "422": "Unprocessable Entity - Validation failed",
+      "429": "Too Many Requests - Rate limit exceeded"
+    },
+    "serverError": {
+      "500": "Internal Server Error - Unexpected error",
+      "502": "Bad Gateway - Upstream service error",
+      "503": "Service Unavailable - Service temporarily unavailable"
+    }
+  },
+  "errorCodes": {
+    "format": "{DOMAIN}_{CATEGORY}_{SPECIFIC}",
+    "examples": {
+      "AUTH_TOKEN_EXPIRED": "Authentication token has expired",
+      "AUTH_TOKEN_INVALID": "Authentication token is invalid",
+      "USER_NOT_FOUND": "User not found",
+      "USER_EMAIL_EXISTS": "Email already registered",
+      "VALIDATION_REQUIRED": "Required field missing",
+      "VALIDATION_FORMAT": "Invalid field format",
+      "PERMISSION_DENIED": "Insufficient permissions"
+    }
+  },
+  "rateLimit": {
+    "headers": {
+      "limit": "X-RateLimit-Limit",
+      "remaining": "X-RateLimit-Remaining",
+      "reset": "X-RateLimit-Reset"
+    },
+    "defaults": {
+      "authenticated": 1000,
+      "unauthenticated": 100,
+      "window": "1 hour"
+    }
+  }
+}

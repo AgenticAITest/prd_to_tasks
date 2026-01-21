@@ -1,0 +1,136 @@
+{
+  "region": "ID",
+  "locale": "id-ID",
+  "timezone": "Asia/Jakarta",
+  "currency": {
+    "code": "IDR",
+    "symbol": "Rp",
+    "name": "Indonesian Rupiah",
+    "decimals": 0,
+    "thousandsSeparator": ".",
+    "decimalSeparator": ",",
+    "format": "Rp #.###"
+  },
+  "taxation": {
+    "ppn": {
+      "name": "Pajak Pertambahan Nilai",
+      "code": "PPN",
+      "rate": 11,
+      "effectiveDate": "2022-04-01",
+      "calculation": "exclusive",
+      "rounding": "floor"
+    },
+    "pph21": {
+      "name": "Pajak Penghasilan Pasal 21",
+      "code": "PPh21",
+      "brackets": [
+        { "min": 0, "max": 60000000, "rate": 5 },
+        { "min": 60000000, "max": 250000000, "rate": 15 },
+        { "min": 250000000, "max": 500000000, "rate": 25 },
+        { "min": 500000000, "max": 5000000000, "rate": 30 },
+        { "min": 5000000000, "max": null, "rate": 35 }
+      ]
+    },
+    "pph23": {
+      "name": "Pajak Penghasilan Pasal 23",
+      "code": "PPh23",
+      "rates": {
+        "dividend": 15,
+        "royalty": 15,
+        "interest": 15,
+        "services": 2
+      }
+    }
+  },
+  "identifiers": {
+    "nik": {
+      "name": "Nomor Induk Kependudukan",
+      "length": 16,
+      "pattern": "^[0-9]{16}$",
+      "description": "Indonesian National ID Number"
+    },
+    "npwp": {
+      "name": "Nomor Pokok Wajib Pajak",
+      "length": 15,
+      "pattern": "^[0-9]{2}\\.[0-9]{3}\\.[0-9]{3}\\.[0-9]-[0-9]{3}\\.[0-9]{3}$",
+      "description": "Indonesian Tax ID Number"
+    },
+    "ktp": {
+      "name": "Kartu Tanda Penduduk",
+      "description": "Indonesian ID Card"
+    },
+    "siup": {
+      "name": "Surat Izin Usaha Perdagangan",
+      "description": "Business Trading License"
+    },
+    "nib": {
+      "name": "Nomor Induk Berusaha",
+      "length": 13,
+      "pattern": "^[0-9]{13}$",
+      "description": "Business Identification Number"
+    }
+  },
+  "dateFormats": {
+    "short": "dd/MM/yyyy",
+    "long": "dd MMMM yyyy",
+    "withTime": "dd/MM/yyyy HH:mm",
+    "fullWithTime": "dd MMMM yyyy HH:mm:ss",
+    "dayNames": ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"],
+    "monthNames": ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+  },
+  "phone": {
+    "countryCode": "+62",
+    "format": "+62 xxx-xxxx-xxxx",
+    "mobilePrefix": ["81", "82", "83", "85", "87", "88", "89"],
+    "pattern": "^(\\+62|62|0)8[1-9][0-9]{6,10}$"
+  },
+  "address": {
+    "levels": ["provinsi", "kabupaten", "kecamatan", "kelurahan"],
+    "postalCodeLength": 5,
+    "postalCodePattern": "^[0-9]{5}$"
+  },
+  "banking": {
+    "transferTypes": ["SKN", "RTGS", "BI-FAST"],
+    "accountNumberLength": {
+      "min": 10,
+      "max": 16
+    },
+    "majorBanks": [
+      { "code": "014", "name": "Bank Central Asia (BCA)" },
+      { "code": "009", "name": "Bank Negara Indonesia (BNI)" },
+      { "code": "002", "name": "Bank Rakyat Indonesia (BRI)" },
+      { "code": "008", "name": "Bank Mandiri" },
+      { "code": "022", "name": "Bank CIMB Niaga" }
+    ]
+  },
+  "dataPrivacy": {
+    "regulation": "UU PDP (Undang-Undang Pelindungan Data Pribadi)",
+    "sensitiveFields": ["nik", "npwp", "phone", "email", "address", "bank_account", "medical_records"],
+    "consentRequired": true,
+    "retentionPeriod": {
+      "transactional": 10,
+      "financial": 10,
+      "logs": 1,
+      "sessions": 0.25
+    },
+    "deletionPolicy": {
+      "softDelete": true,
+      "hardDeleteAfterDays": 30,
+      "anonymization": true
+    }
+  },
+  "businessHours": {
+    "weekdays": { "start": "08:00", "end": "17:00" },
+    "saturday": { "start": "08:00", "end": "12:00" },
+    "sunday": null,
+    "publicHolidays": "excluded"
+  },
+  "numberFormats": {
+    "decimal": ",",
+    "thousands": ".",
+    "percentage": {
+      "decimals": 2,
+      "suffix": "%"
+    }
+  }
+}

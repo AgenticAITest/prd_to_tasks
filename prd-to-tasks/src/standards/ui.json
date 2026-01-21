@@ -1,0 +1,139 @@
+{
+  "componentLibrary": "shadcn/ui",
+  "forms": {
+    "layout": "vertical",
+    "labelPosition": "top",
+    "requiredIndicator": "*",
+    "errorPosition": "below",
+    "fieldSpacing": "4",
+    "sectionSpacing": "8"
+  },
+  "tables": {
+    "defaultPageSize": 20,
+    "pageSizeOptions": [10, 20, 50, 100],
+    "showRowNumbers": true,
+    "enableSorting": true,
+    "enableFiltering": true,
+    "enableColumnResize": true,
+    "stickyHeader": true,
+    "emptyStateMessage": "No data available"
+  },
+  "modals": {
+    "sizes": {
+      "sm": "400px",
+      "md": "600px",
+      "lg": "800px",
+      "xl": "1000px",
+      "full": "90vw"
+    },
+    "defaultSize": "md",
+    "closeOnOverlayClick": true,
+    "closeOnEscape": true,
+    "showCloseButton": true
+  },
+  "buttons": {
+    "variants": ["default", "primary", "secondary", "destructive", "outline", "ghost", "link"],
+    "sizes": ["sm", "default", "lg", "icon"],
+    "loadingIndicator": "spinner",
+    "iconPosition": "left"
+  },
+  "inputs": {
+    "sizes": ["sm", "default", "lg"],
+    "showClearButton": false,
+    "showPasswordToggle": true,
+    "autoComplete": "off",
+    "defaultDebounce": 300
+  },
+  "notifications": {
+    "position": "top-right",
+    "duration": 5000,
+    "maxVisible": 5,
+    "types": {
+      "success": {
+        "icon": "check-circle",
+        "color": "green"
+      },
+      "error": {
+        "icon": "x-circle",
+        "color": "red"
+      },
+      "warning": {
+        "icon": "alert-triangle",
+        "color": "yellow"
+      },
+      "info": {
+        "icon": "info",
+        "color": "blue"
+      }
+    }
+  },
+  "formatting": {
+    "date": "yyyy-MM-dd",
+    "dateTime": "yyyy-MM-dd HH:mm",
+    "time": "HH:mm",
+    "currency": {
+      "symbol": "Rp",
+      "position": "before",
+      "decimals": 0,
+      "thousandsSeparator": ".",
+      "decimalSeparator": ","
+    },
+    "number": {
+      "thousandsSeparator": ",",
+      "decimalSeparator": "."
+    },
+    "percentage": {
+      "decimals": 2,
+      "suffix": "%"
+    },
+    "phone": "+62 xxx-xxxx-xxxx"
+  },
+  "colors": {
+    "status": {
+      "active": "green",
+      "inactive": "gray",
+      "pending": "yellow",
+      "rejected": "red",
+      "draft": "blue"
+    },
+    "priority": {
+      "critical": "red",
+      "high": "orange",
+      "medium": "yellow",
+      "low": "green"
+    }
+  },
+  "loadingStates": {
+    "spinner": {
+      "size": "default",
+      "color": "primary"
+    },
+    "skeleton": {
+      "animation": "pulse",
+      "borderRadius": "md"
+    },
+    "overlay": {
+      "blur": true,
+      "opacity": 0.5
+    }
+  },
+  "accessibility": {
+    "focusRingColor": "ring-blue-500",
+    "focusRingWidth": 2,
+    "minimumTouchTarget": 44,
+    "colorContrast": "WCAG AA",
+    "keyboardNavigation": true,
+    "screenReaderText": true
+  },
+  "responsive": {
+    "breakpoints": {
+      "sm": "640px",
+      "md": "768px",
+      "lg": "1024px",
+      "xl": "1280px",
+      "2xl": "1536px"
+    },
+    "mobileFirst": true,
+    "containerMaxWidth": "1400px"
+  }
+}
