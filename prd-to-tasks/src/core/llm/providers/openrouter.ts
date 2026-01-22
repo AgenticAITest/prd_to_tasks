@@ -14,7 +14,8 @@ export async function callOpenRouter(
   model: string,
   systemPrompt: string,
   userPrompt: string,
-  maxTokens: number = 4096
+  maxTokens: number = 4096,
+  signal?: AbortSignal
 ): Promise<LLMResponse> {
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -33,6 +34,7 @@ export async function callOpenRouter(
       max_tokens: maxTokens,
       temperature: 0.7,
     }),
+    signal,
   });
 
   if (!response.ok) {

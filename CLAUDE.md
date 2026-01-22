@@ -72,14 +72,22 @@ The `LLMRouter` (`src/core/llm/LLMRouter.ts`) routes requests to different provi
 - **T2** (Standard): Gemini Flash - Forms, lists, validation
 - **T3** (Complex): Gemini Pro - Business logic, integrations
 - **T4** (Critical): Claude Sonnet - Architecture, security
+- **prdAnalysis** / **entityExtraction**: Special tiers for analysis phases
 
 Supported providers: Anthropic, Google, Deepseek, OpenAI, OpenRouter
 
 Provider implementations are in `src/core/llm/providers/`. Each provider exports a `call*` function (e.g., `callAnthropic`, `callGoogle`). The router includes retry logic with exponential backoff and automatic auth error handling.
 
+LLM prompts are defined in `src/core/llm/prompts/` with separate files for each phase (prd-analysis, entity-extraction, erd-generation, task-generation).
+
 ### Data Persistence
 
 Uses Dexie (IndexedDB wrapper) for local persistence (`src/db/database.ts`). Projects and their associated PRD/entity/ERD/task data are stored in the browser's IndexedDB.
+
+Database tables:
+- `projects`: Main project data (PRD, entities, relationships, ERD schema, task set)
+- `settings`: Key-value store for app settings
+- `recentProjects`: Tracks last 10 accessed projects
 
 ### PRD Analysis
 

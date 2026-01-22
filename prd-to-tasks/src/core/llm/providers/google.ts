@@ -5,7 +5,8 @@ export async function callGoogle(
   model: string,
   systemPrompt: string,
   userPrompt: string,
-  maxTokens: number = 4096
+  maxTokens: number = 4096,
+  signal?: AbortSignal
 ): Promise<LLMResponse> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
@@ -29,6 +30,7 @@ export async function callGoogle(
         temperature: 0.7,
       },
     }),
+    signal,
   });
 
   if (!response.ok) {

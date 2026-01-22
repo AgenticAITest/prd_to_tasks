@@ -10,6 +10,7 @@ interface ERDState {
   // ERD data
   schema: ERDSchema | null;
   dbml: string;
+  sqlMigration: string;
 
   // Validation
   validationResult: ERDValidationResult | null;
@@ -27,6 +28,7 @@ interface ERDState {
   // Actions
   setSchema: (schema: ERDSchema) => void;
   setDBML: (dbml: string) => void;
+  setSqlMigration: (sql: string) => void;
   setValidationResult: (result: ERDValidationResult) => void;
   setStandardsResult: (result: StandardsEnforcementResult) => void;
   updateGenerationOptions: (options: Partial<DBMLGenerationOptions>) => void;
@@ -55,6 +57,7 @@ export const useERDStore = create<ERDState>()((set, get) => ({
   // Initial state
   schema: null,
   dbml: '',
+  sqlMigration: '',
   validationResult: null,
   standardsResult: null,
   generationOptions: defaultGenerationOptions,
@@ -70,6 +73,10 @@ export const useERDStore = create<ERDState>()((set, get) => ({
 
   setDBML: (dbml: string) => {
     set({ dbml });
+  },
+
+  setSqlMigration: (sql: string) => {
+    set({ sqlMigration: sql });
   },
 
   setValidationResult: (result: ERDValidationResult) => {
@@ -107,6 +114,7 @@ export const useERDStore = create<ERDState>()((set, get) => ({
     set({
       schema: null,
       dbml: '',
+      sqlMigration: '',
       validationResult: null,
       standardsResult: null,
       error: null,

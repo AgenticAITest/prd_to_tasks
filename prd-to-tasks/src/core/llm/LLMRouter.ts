@@ -26,7 +26,8 @@ export class LLMRouter {
     tier: TaskTierType,
     systemPrompt: string,
     userPrompt: string,
-    maxTokens: number = 4096
+    maxTokens: number = 4096,
+    signal?: AbortSignal
   ): Promise<LLMResponse> {
     const tierConfig = this.config.modelSelection[tier];
     const apiKey = this.config.apiKeys[tierConfig.provider];
@@ -45,7 +46,8 @@ export class LLMRouter {
       tierConfig.model,
       systemPrompt,
       userPrompt,
-      maxTokens
+      maxTokens,
+      signal
     );
   }
 
@@ -55,23 +57,24 @@ export class LLMRouter {
     model: string,
     systemPrompt: string,
     userPrompt: string,
-    maxTokens: number = 4096
+    maxTokens: number = 4096,
+    signal?: AbortSignal
   ): Promise<LLMResponse> {
     switch (provider) {
       case 'anthropic':
-        return callAnthropic(apiKey, model, systemPrompt, userPrompt, maxTokens);
+        return callAnthropic(apiKey, model, systemPrompt, userPrompt, maxTokens, signal);
 
       case 'google':
-        return callGoogle(apiKey, model, systemPrompt, userPrompt, maxTokens);
+        return callGoogle(apiKey, model, systemPrompt, userPrompt, maxTokens, signal);
 
       case 'deepseek':
-        return callDeepSeek(apiKey, model, systemPrompt, userPrompt, maxTokens);
+        return callDeepSeek(apiKey, model, systemPrompt, userPrompt, maxTokens, signal);
 
       case 'openai':
-        return callOpenAI(apiKey, model, systemPrompt, userPrompt, maxTokens);
+        return callOpenAI(apiKey, model, systemPrompt, userPrompt, maxTokens, signal);
 
       case 'openrouter':
-        return callOpenRouter(apiKey, model, systemPrompt, userPrompt, maxTokens);
+        return callOpenRouter(apiKey, model, systemPrompt, userPrompt, maxTokens, signal);
 
       default:
         throw new Error(`Unknown provider: ${provider}`);
@@ -83,15 +86,25 @@ export class LLMRouter {
     systemPrompt: string,
     userPrompt: string,
     maxTokens: number = 4096,
-    maxRetries: number = 3
+    maxRetries: number = 3,
+    signal?: AbortSignal
   ): Promise<LLMResponse> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        return await this.call(tier, systemPrompt, userPrompt, maxTokens);
+        // Check if aborted before each attempt
+        if (signal?.aborted) {
+          throw new Error('Operation was cancelled');
+        }
+        return await this.call(tier, systemPrompt, userPrompt, maxTokens, signal);
       } catch (error) {
         lastError = error as Error;
+
+        // Don't retry on abort
+        if (signal?.aborted || lastError.name === 'AbortError') {
+          throw new Error('Operation was cancelled');
+        }
 
         // Don't retry on auth errors
         if (lastError.message.includes('401') || lastError.message.includes('403')) {

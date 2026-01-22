@@ -5,7 +5,8 @@ export async function callDeepSeek(
   model: string,
   systemPrompt: string,
   userPrompt: string,
-  maxTokens: number = 4096
+  maxTokens: number = 4096,
+  signal?: AbortSignal
 ): Promise<LLMResponse> {
   const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
     method: 'POST',
@@ -22,6 +23,7 @@ export async function callDeepSeek(
       max_tokens: maxTokens,
       temperature: 0.7,
     }),
+    signal,
   });
 
   if (!response.ok) {

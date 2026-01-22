@@ -89,12 +89,12 @@ export interface Constraint {
 }
 
 export interface EntitySource {
-  type: 'prd-explicit' | 'prd-inferred' | 'screen-mapping' | 'business-rule' | 'manual';
+  type: 'prd-explicit' | 'prd-inferred' | 'screen-mapping' | 'business-rule' | 'manual' | 'ai-extracted';
   reference?: string;
 }
 
 export interface FieldSource {
-  type: 'prd-explicit' | 'screen-field' | 'business-rule' | 'standard' | 'inferred' | 'manual';
+  type: 'prd-explicit' | 'screen-field' | 'business-rule' | 'standard' | 'inferred' | 'manual' | 'ai-extracted';
   reference?: string;
 }
 

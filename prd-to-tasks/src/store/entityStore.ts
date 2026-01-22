@@ -7,11 +7,19 @@ import type {
 } from '@/types/entity';
 import { generateId } from '@/lib/utils';
 
+export type ExtractionMode = 'idle' | 'extracting' | 'reviewing' | 'confirmed';
+
 interface EntityState {
   // Entity data
   entities: Entity[];
   relationships: Relationship[];
   suggestions: EntitySuggestion[];
+
+  // Pending AI extraction (for review before confirmation)
+  pendingEntities: Entity[];
+  pendingRelationships: Relationship[];
+  pendingSuggestions: EntitySuggestion[];
+  extractionMode: ExtractionMode;
 
   // Selected state
   selectedEntityId: string | null;
@@ -53,6 +61,16 @@ interface EntityState {
   setExtracting: (extracting: boolean, progress?: number) => void;
   setError: (error: string | null) => void;
 
+  // AI Extraction workflow
+  setExtractionMode: (mode: ExtractionMode) => void;
+  setPendingExtraction: (
+    entities: Entity[],
+    relationships: Relationship[],
+    suggestions: EntitySuggestion[]
+  ) => void;
+  confirmExtraction: () => void;
+  discardExtraction: () => void;
+
   // Clear
   clearEntities: () => void;
 
@@ -68,6 +86,10 @@ export const useEntityStore = create<EntityState>()((set, get) => ({
   entities: [],
   relationships: [],
   suggestions: [],
+  pendingEntities: [],
+  pendingRelationships: [],
+  pendingSuggestions: [],
+  extractionMode: 'idle',
   selectedEntityId: null,
   selectedFieldId: null,
   isExtracting: false,
@@ -243,7 +265,52 @@ export const useEntityStore = create<EntityState>()((set, get) => ({
   },
 
   setError: (error: string | null) => {
-    set({ error, isExtracting: false });
+    set({ error, isExtracting: false, extractionMode: 'idle' });
+  },
+
+  // AI Extraction workflow
+  setExtractionMode: (mode: ExtractionMode) => {
+    set({ extractionMode: mode });
+  },
+
+  setPendingExtraction: (
+    entities: Entity[],
+    relationships: Relationship[],
+    suggestions: EntitySuggestion[]
+  ) => {
+    set({
+      pendingEntities: entities,
+      pendingRelationships: relationships,
+      pendingSuggestions: suggestions,
+      extractionMode: 'reviewing',
+      isExtracting: false,
+      extractionProgress: 100,
+    });
+  },
+
+  confirmExtraction: () => {
+    const { pendingEntities, pendingRelationships, pendingSuggestions } = get();
+    set({
+      entities: pendingEntities,
+      relationships: pendingRelationships,
+      suggestions: pendingSuggestions,
+      pendingEntities: [],
+      pendingRelationships: [],
+      pendingSuggestions: [],
+      extractionMode: 'confirmed',
+      selectedEntityId: pendingEntities.length > 0 ? pendingEntities[0].id : null,
+    });
+  },
+
+  discardExtraction: () => {
+    set({
+      pendingEntities: [],
+      pendingRelationships: [],
+      pendingSuggestions: [],
+      extractionMode: 'idle',
+      isExtracting: false,
+      extractionProgress: 0,
+    });
   },
 
   // Clear
@@ -252,6 +319,10 @@ export const useEntityStore = create<EntityState>()((set, get) => ({
       entities: [],
       relationships: [],
       suggestions: [],
+      pendingEntities: [],
+      pendingRelationships: [],
+      pendingSuggestions: [],
+      extractionMode: 'idle',
       selectedEntityId: null,
       selectedFieldId: null,
       error: null,

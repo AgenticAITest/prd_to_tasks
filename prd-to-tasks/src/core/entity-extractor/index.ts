@@ -2,6 +2,10 @@ import type { Entity, Field, Relationship, EntityType, DataType } from '@/types/
 import type { StructuredPRD } from '@/types/prd';
 import { generateId } from '@/lib/utils';
 
+// Re-export AI extractor
+export { extractEntitiesWithAI } from './ai-extractor';
+export type { AIEntityExtractionResult } from './ai-extractor';
+
 export interface EntityExtractionResult {
   entities: Entity[];
   relationships: Relationship[];

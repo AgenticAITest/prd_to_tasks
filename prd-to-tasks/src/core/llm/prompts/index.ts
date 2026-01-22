@@ -27,3 +27,12 @@ export {
   SEMANTIC_ANALYSIS_RESPONSE_SCHEMA,
   buildSemanticAnalysisPrompt,
 } from './prd-semantic-analysis';
+
+// Default prompts mapping (for editable prompts feature)
+export {
+  DEFAULT_PROMPTS,
+  PROMPT_METADATA,
+  getDefaultPrompt,
+  getPromptMetadata,
+  type PromptKey,
+} from './default-prompts';

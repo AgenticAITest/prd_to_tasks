@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Play, FileText, List, Book, Monitor, Code, Sparkles, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Play, FileText, List, Book, Monitor, Code, Sparkles, AlertTriangle, CheckCircle2, XCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 
 export function PRDAnalysisPhase() {
   const [activeTab, setActiveTab] = useState('overview');
+  const abortControllerRef = useRef<AbortController | null>(null);
   const {
     prd,
     isParsing,
@@ -109,6 +110,15 @@ export function PRDAnalysisPhase() {
     }
   };
 
+  const handleCancelAIAnalysis = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      usePRDStore.getState().setSemanticAnalyzing(false);
+      toast.info('AI analysis cancelled');
+    }
+  };
+
   const handleAIAnalysis = async () => {
     const currentPRD = usePRDStore.getState().prd;
     const currentRawContent = usePRDStore.getState().rawContent;
@@ -123,6 +133,10 @@ export function PRDAnalysisPhase() {
       return;
     }
 
+    // Create new AbortController for this operation
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
     try {
       // Initialize/update the LLM router with current settings
       updateLLMRouter({ apiKeys, modelSelection });
@@ -131,14 +145,16 @@ export function PRDAnalysisPhase() {
 
       // Simulate some progress for UX
       for (let i = 0; i <= 30; i += 10) {
+        if (signal.aborted) return;
         await new Promise((r) => setTimeout(r, 100));
         usePRDStore.getState().setSemanticAnalyzing(true, i);
       }
 
-      // Call the semantic analyzer
+      // Call the semantic analyzer with abort signal
       const semanticResult = await analyzeSemantics(
         currentRawContent || prdFiles[0]?.content || '',
-        currentPRD
+        currentPRD,
+        signal
       );
 
       usePRDStore.getState().setSemanticAnalyzing(true, 100);
@@ -162,6 +178,11 @@ export function PRDAnalysisPhase() {
       usePRDStore.getState().setSemanticAnalyzing(false);
       const message = error instanceof Error ? error.message : 'Unknown error';
 
+      // Don't show error for user-initiated cancellation
+      if (message.includes('cancelled') || message.includes('aborted')) {
+        return;
+      }
+
       // Provide helpful error messages for common issues
       if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
         toast.error('AI Analysis failed: Network error', {
@@ -176,6 +197,8 @@ export function PRDAnalysisPhase() {
       } else {
         toast.error(`AI Analysis failed: ${message}`);
       }
+    } finally {
+      abortControllerRef.current = null;
     }
   };
 
@@ -251,13 +274,26 @@ export function PRDAnalysisPhase() {
                     ? 'Running AI semantic analysis...'
                     : 'Processing...'}
                 </span>
-                <span>
-                  {isParsing
-                    ? parseProgress
-                    : isAnalyzing
-                    ? analyzeProgress
-                    : semanticAnalyzeProgress}%
-                </span>
+                <div className="flex items-center gap-2">
+                  <span>
+                    {isParsing
+                      ? parseProgress
+                      : isAnalyzing
+                      ? analyzeProgress
+                      : semanticAnalyzeProgress}%
+                  </span>
+                  {isSemanticAnalyzing && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCancelAIAnalysis}
+                      className="h-7 px-3 border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      Cancel
+                    </Button>
+                  )}
+                </div>
               </div>
               <Progress
                 value={

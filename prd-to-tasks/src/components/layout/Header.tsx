@@ -15,8 +15,10 @@ import { useProjectStore } from '@/store/projectStore';
 import { useUIStore } from '@/store/uiStore';
 
 export function Header() {
-  const { project, recentProjects, createProject } = useProjectStore();
-  const { openModal } = useUIStore();
+  const project = useProjectStore((s) => s.project);
+  const recentProjects = useProjectStore((s) => s.recentProjects);
+  const createProject = useProjectStore((s) => s.createProject);
+  const openModal = useUIStore((s) => s.openModal);
 
   const handleNewProject = () => {
     const name = prompt('Enter project name:');

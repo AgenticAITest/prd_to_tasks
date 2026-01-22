@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Eye, EyeOff, ExternalLink, Check, X, Loader2, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, ExternalLink, Check, X, Loader2, RefreshCw, Download, Upload, RotateCcw, Edit2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -26,6 +26,9 @@ import type { LLMProvider, TaskTierType } from '@/types/llm';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { fetchOpenRouterModels, clearOpenRouterCache, type OpenRouterModel } from '@/lib/openrouter';
+import { usePromptStore } from '@/store/promptStore';
+import { PROMPT_METADATA, type PromptKey } from '@/core/llm/prompts/default-prompts';
+import { PromptEditorDialog } from '@/components/settings/PromptEditorDialog';
 
 interface SettingsModalProps {
   open: boolean;
@@ -33,17 +36,28 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
-  const { settingsTab, setSettingsTab, setTheme, theme } = useUIStore();
-  const {
-    apiKeys,
-    modelSelection,
-    setApiKey,
-    setModelForTier,
-    appearance,
-    updateAppearance,
-  } = useSettingsStore();
+  // Use individual selectors for better reactivity
+  const settingsTab = useUIStore((s) => s.settingsTab);
+  const setSettingsTab = useUIStore((s) => s.setSettingsTab);
+  const setTheme = useUIStore((s) => s.setTheme);
+  const theme = useUIStore((s) => s.theme);
+
+  const apiKeys = useSettingsStore((s) => s.apiKeys);
+  const modelSelection = useSettingsStore((s) => s.modelSelection);
+  const setApiKey = useSettingsStore((s) => s.setApiKey);
+  const setModelForTier = useSettingsStore((s) => s.setModelForTier);
+  const appearance = useSettingsStore((s) => s.appearance);
+  const updateAppearance = useSettingsStore((s) => s.updateAppearance);
+
+  // Ensure settingsTab has a valid value
+  const validTabs = ['api-keys', 'models', 'prompts', 'standards', 'appearance'];
+  const currentTab = validTabs.includes(settingsTab) ? settingsTab : 'api-keys';
 
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+  const [editingPrompt, setEditingPrompt] = useState<PromptKey | null>(null);
+
+  // Prompt store
+  const { isCustomized, getCustomizedKeys, exportPrompts, importPrompts, resetAllPrompts } = usePromptStore();
   const [testingKey, setTestingKey] = useState<string | null>(null);
   const [keyStatus, setKeyStatus] = useState<Record<string, 'valid' | 'invalid' | null>>({});
   const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([]);
@@ -106,9 +120,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     setShowKeys((s) => ({ ...s, [provider]: !s[provider] }));
   };
 
-  if (!open) return null;
-
   return (
+  <>
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
@@ -119,13 +132,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         </DialogHeader>
 
         <Tabs
-          value={settingsTab}
+          value={currentTab}
           onValueChange={setSettingsTab}
           className="flex-1 overflow-hidden flex flex-col"
         >
-          <TabsList className="grid grid-cols-4 w-full">
+          <TabsList className="grid grid-cols-5 w-full">
             <TabsTrigger value="api-keys">API Keys</TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
+            <TabsTrigger value="prompts">Prompts</TabsTrigger>
             <TabsTrigger value="standards">Standards</TabsTrigger>
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
           </TabsList>
@@ -298,7 +312,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                                 </SelectItem>
                               ))
                             ) : (
-                              <SelectItem value="" disabled>
+                              <SelectItem value="__no_models__" disabled>
                                 {isOpenRouter
                                   ? isLoadingOpenRouter
                                     ? 'Loading models...'
@@ -320,6 +334,122 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   </div>
                 );
               })}
+            </TabsContent>
+
+            {/* Prompts Tab */}
+            <TabsContent value="prompts" className="mt-0 space-y-4">
+              <div className="space-y-1 mb-4">
+                <p className="text-sm text-muted-foreground">
+                  Customize the AI prompts used in each phase. Modified prompts are marked with a badge.
+                </p>
+                {getCustomizedKeys().length > 0 && (
+                  <p className="text-xs text-primary">
+                    {getCustomizedKeys().length} prompt(s) customized
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                {PROMPT_METADATA.map((prompt) => {
+                  const customized = isCustomized(prompt.key);
+                  return (
+                    <div
+                      key={prompt.key}
+                      className={cn(
+                        'flex items-center justify-between p-3 border rounded-lg',
+                        customized && 'border-primary/30 bg-primary/5'
+                      )}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">{prompt.name}</span>
+                          {customized && (
+                            <Badge variant="secondary" className="text-xs">
+                              Custom
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {prompt.description}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground/70">
+                          {prompt.phase}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setEditingPrompt(prompt.key)}
+                        className="ml-2"
+                      >
+                        <Edit2 className="h-3.5 w-3.5 mr-1" />
+                        Edit
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Import/Export/Reset Actions */}
+              <div className="flex items-center gap-2 pt-4 border-t">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.json';
+                    input.onchange = async (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) {
+                        const text = await file.text();
+                        const success = importPrompts(text);
+                        if (success) {
+                          toast.success('Prompts imported successfully');
+                        } else {
+                          toast.error('Failed to import prompts. Invalid format.');
+                        }
+                      }
+                    };
+                    input.click();
+                  }}
+                >
+                  <Upload className="h-3.5 w-3.5 mr-1" />
+                  Import
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const json = exportPrompts();
+                    const blob = new Blob([json], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'prd-to-tasks-prompts.json';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    toast.success('Prompts exported');
+                  }}
+                  disabled={getCustomizedKeys().length === 0}
+                >
+                  <Download className="h-3.5 w-3.5 mr-1" />
+                  Export
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    resetAllPrompts();
+                    toast.success('All prompts reset to defaults');
+                  }}
+                  disabled={getCustomizedKeys().length === 0}
+                  className="ml-auto"
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                  Reset All
+                </Button>
+              </div>
             </TabsContent>
 
             {/* Standards Tab */}
@@ -381,5 +511,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         </Tabs>
       </DialogContent>
     </Dialog>
+
+    {/* Prompt Editor Dialog */}
+    <PromptEditorDialog
+      promptKey={editingPrompt}
+      open={editingPrompt !== null}
+      onClose={() => setEditingPrompt(null)}
+    />
+  </>
   );
 }

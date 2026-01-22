@@ -12,17 +12,16 @@
 import type { StructuredPRD } from '@/types/prd';
 import type { SemanticAnalysisResult } from '@/types/analysis';
 import { getLLMRouter } from '@/core/llm/LLMRouter';
-import {
-  PRD_SEMANTIC_ANALYSIS_SYSTEM_PROMPT,
-  buildSemanticAnalysisPrompt,
-} from '@/core/llm/prompts';
+import { buildSemanticAnalysisPrompt } from '@/core/llm/prompts';
+import { usePromptStore } from '@/store/promptStore';
 
 /**
  * Performs semantic analysis on a PRD using LLM
  */
 export async function analyzeSemantics(
   rawContent: string,
-  parsedPRD: StructuredPRD
+  parsedPRD: StructuredPRD,
+  signal?: AbortSignal
 ): Promise<SemanticAnalysisResult> {
   const router = getLLMRouter();
 
@@ -47,13 +46,17 @@ export async function analyzeSemantics(
   // Build the prompt
   const userPrompt = buildSemanticAnalysisPrompt(rawContent, parsedSummary);
 
+  // Get system prompt from store (supports custom prompts)
+  const systemPrompt = usePromptStore.getState().getPrompt('semanticAnalysis');
+
   // Call LLM (using prdAnalysis tier for complex reasoning)
   const response = await router.callWithRetry(
     'prdAnalysis',
-    PRD_SEMANTIC_ANALYSIS_SYSTEM_PROMPT,
+    systemPrompt,
     userPrompt,
     8192, // Allow for detailed analysis
-    3 // Max retries
+    3, // Max retries
+    signal
   );
 
   // Parse the response

@@ -1,0 +1,75 @@
+/**
+ * Default LLM Prompts
+ *
+ * This file exports all default system prompts as a centralized map.
+ * The promptStore uses these as fallbacks when no custom prompt is set.
+ */
+
+import { PRD_ANALYSIS_SYSTEM_PROMPT } from './prd-analysis';
+import { PRD_SEMANTIC_ANALYSIS_SYSTEM_PROMPT } from './prd-semantic-analysis';
+import { ENTITY_EXTRACTION_SYSTEM_PROMPT } from './entity-extraction';
+import { TASK_GENERATION_SYSTEM_PROMPT } from './task-generation';
+import { ERD_GENERATION_SYSTEM_PROMPT } from './erd-generation';
+
+export type PromptKey =
+  | 'prdAnalysis'
+  | 'semanticAnalysis'
+  | 'entityExtraction'
+  | 'taskGeneration'
+  | 'erdGeneration';
+
+export interface PromptMetadata {
+  key: PromptKey;
+  name: string;
+  description: string;
+  phase: string;
+}
+
+export const PROMPT_METADATA: PromptMetadata[] = [
+  {
+    key: 'prdAnalysis',
+    name: 'PRD Analysis',
+    description: 'Parses PRD content and extracts structured requirements data (FRs, screens, rules)',
+    phase: 'Phase 1: PRD Input & Analysis',
+  },
+  {
+    key: 'semanticAnalysis',
+    name: 'Semantic Analysis',
+    description: 'Assesses PRD quality, detects gaps, conflicts, and determines readiness',
+    phase: 'Phase 1: PRD Input & Analysis',
+  },
+  {
+    key: 'entityExtraction',
+    name: 'Entity Extraction',
+    description: 'Extracts entities, fields, and relationships from PRD content',
+    phase: 'Phase 2: Entity Extraction',
+  },
+  {
+    key: 'erdGeneration',
+    name: 'ERD Generation',
+    description: 'Generates DBML database schema from entities and relationships',
+    phase: 'Phase 3: ERD Builder',
+  },
+  {
+    key: 'taskGeneration',
+    name: 'Task Generation',
+    description: 'Generates detailed, self-contained development tasks from specifications',
+    phase: 'Phase 4: Task Generator',
+  },
+];
+
+export const DEFAULT_PROMPTS: Record<PromptKey, string> = {
+  prdAnalysis: PRD_ANALYSIS_SYSTEM_PROMPT,
+  semanticAnalysis: PRD_SEMANTIC_ANALYSIS_SYSTEM_PROMPT,
+  entityExtraction: ENTITY_EXTRACTION_SYSTEM_PROMPT,
+  taskGeneration: TASK_GENERATION_SYSTEM_PROMPT,
+  erdGeneration: ERD_GENERATION_SYSTEM_PROMPT,
+};
+
+export function getDefaultPrompt(key: PromptKey): string {
+  return DEFAULT_PROMPTS[key];
+}
+
+export function getPromptMetadata(key: PromptKey): PromptMetadata | undefined {
+  return PROMPT_METADATA.find((m) => m.key === key);
+}
