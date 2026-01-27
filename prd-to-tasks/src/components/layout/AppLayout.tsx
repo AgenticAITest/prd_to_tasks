@@ -9,6 +9,7 @@ import { SettingsModal } from '@/components/modals/SettingsModal';
 import { FirstTimeSetupModal } from '@/components/modals/FirstTimeSetupModal';
 import { ExportModal } from '@/components/modals/ExportModal';
 import { ConfirmationModal } from '@/components/modals/ConfirmationModal';
+import { ArchitecturePreviewModal } from '@/components/modals/ArchitecturePreviewModal';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
 import { hasEnvApiKeys } from '@/lib/env-config';
@@ -64,6 +65,11 @@ export function AppLayout() {
       />
       <ConfirmationModal
         open={activeModal === 'confirmation'}
+        onClose={() => useUIStore.getState().closeModal()}
+      />
+
+      <ArchitecturePreviewModal
+        open={activeModal === 'preview-architecture'}
         onClose={() => useUIStore.getState().closeModal()}
       />
 

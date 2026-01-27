@@ -11,13 +11,25 @@ import type {
   WorkflowSpecification,
   TestCase,
 } from '@/types/task';
+import { usePromptStore } from '@/store/promptStore';
+import { useSettingsStore } from '@/store/settingsStore';
 import { generateId } from '@/lib/utils';
+import { getLLMRouter } from '@/core/llm/LLMRouter';
+import { buildArchitectureExtractionPrompt } from '@/core/llm/prompts/architecture-extraction';
+import { buildTaskImplementationPrompt } from '@/core/llm/prompts/task-implementation';
 
 export interface TaskGenerationContext {
   prd: StructuredPRD;
   entities: Entity[];
   relationships: Relationship[];
   dbml: string;
+  // Optional attached architecture guide (raw content and metadata)
+  architectureGuide?: {
+    id?: string;
+    name?: string;
+    content?: string;
+    format?: string;
+  };
 }
 
 export interface TaskGenerationOptions {
@@ -49,6 +61,8 @@ export function generateTasks(
   context: TaskGenerationContext,
   options: Partial<TaskGenerationOptions> = {}
 ): TaskSet {
+  // legacy synchronous generator kept for compatibility
+
   const opts = { ...DEFAULT_OPTIONS, ...options };
   taskCounter = 0;
 
@@ -103,20 +117,39 @@ export function generateTasks(
   }
 
   // Resolve dependencies
-  const resolvedTasks = resolveDependencies(tasks);
+  let resolvedTasks = resolveDependencies(tasks);
+
+  // Ensure every task has a technicalImplementation object (may be empty)
+  resolvedTasks = resolvedTasks.map((t) => ({
+    ...t,
+    specification: {
+      ...t.specification,
+      technicalImplementation: (t.specification as any).technicalImplementation || {},
+    },
+  }));
 
   // Calculate summary
   const tierBreakdown = {
-    T1: resolvedTasks.filter((t) => t.tier === 'T1').length,
-    T2: resolvedTasks.filter((t) => t.tier === 'T2').length,
-    T3: resolvedTasks.filter((t) => t.tier === 'T3').length,
-    T4: resolvedTasks.filter((t) => t.tier === 'T4').length,
+    T1: resolvedTasks.filter((t: ProgrammableTask) => t.tier === 'T1').length,
+    T2: resolvedTasks.filter((t: ProgrammableTask) => t.tier === 'T2').length,
+    T3: resolvedTasks.filter((t: ProgrammableTask) => t.tier === 'T3').length,
+    T4: resolvedTasks.filter((t: ProgrammableTask) => t.tier === 'T4').length,
   };
 
   const typeBreakdown: Record<string, number> = {};
-  resolvedTasks.forEach((task) => {
+  resolvedTasks.forEach((task: ProgrammableTask) => {
     typeBreakdown[task.type] = (typeBreakdown[task.type] || 0) + 1;
   });
+
+  const metadata: TaskSet['metadata'] = {
+    generatorVersion: '1.0.0',
+    prdId: context.prd.id,
+    erdId: 'erd-unknown',
+    standardsApplied: ['database', 'api'],
+    exportFormats: ['json', 'yaml', 'markdown'],
+    architectureGuide: undefined,
+    architectureRecommendations: [],
+  };
 
   return {
     id: generateId(),
@@ -129,8 +162,458 @@ export function generateTasks(
       typeBreakdown,
       estimatedComplexity: calculateOverallComplexity(resolvedTasks),
     },
+    metadata,
   };
 }
+
+/**
+ * If an architecture guide is provided, call an LLM to extract recommendations
+ * and apply them to generated tasks. Returns a new TaskSet.
+ */
+export async function generateTasksWithArchitecture(
+  context: TaskGenerationContext,
+  options: Partial<TaskGenerationOptions> = {},
+  signal?: AbortSignal,
+  previewOnly: boolean = false
+): Promise<TaskSet> {
+  // Generate base task set synchronously
+  const base = generateTasks(context, options);
+
+  // If no architecture guide attached, return base but ensure metadata and technicalImplementation placeholders
+  if (!context.architectureGuide || !context.architectureGuide.content) {
+    return {
+      ...base,
+      metadata: {
+        generatorVersion: base.metadata?.generatorVersion ?? '1.0.0',
+        prdId: base.metadata?.prdId ?? context.prd.id,
+        erdId: base.metadata?.erdId ?? 'erd-unknown',
+        standardsApplied: base.metadata?.standardsApplied ?? ['database', 'api'],
+        exportFormats: base.metadata?.exportFormats ?? ['json', 'yaml', 'markdown'],
+        architectureGuide: undefined,
+        architectureRecommendations: [],
+      },
+    } as TaskSet;
+  }
+
+  // Try to call LLM for recommendations
+  try {
+    const { getPrompt } = usePromptStore.getState();
+    const systemPrompt = getPrompt('architectureExtraction');
+
+    const prdSummary = `${context.prd.projectName} - ${context.prd.moduleName} - ${context.prd.version}`;
+    const entitiesSummary = context.entities.map((e) => `${e.name} (${e.type})`).join('\n');
+
+    const userPrompt = buildArchitectureExtractionPrompt(
+      context.architectureGuide.content || '',
+      prdSummary,
+      entitiesSummary
+    );
+
+    const router = getLLMRouter();
+
+    // If no API keys configured, skip LLM extraction and mark metadata
+    if (!router.hasAnyApiKey()) {
+      console.warn('No LLM provider API key configured — skipping architecture extraction');
+      return {
+        ...base,
+        metadata: {
+          generatorVersion: base.metadata?.generatorVersion ?? '1.0.0',
+          prdId: base.metadata?.prdId ?? context.prd.id,
+          erdId: base.metadata?.erdId ?? 'erd-unknown',
+          standardsApplied: base.metadata?.standardsApplied ?? ['database', 'api'],
+          exportFormats: base.metadata?.exportFormats ?? ['json', 'yaml', 'markdown'],
+        },
+      };
+    }
+
+    const response = await router.callWithRetry(
+      'prdAnalysis', // reuse prdAnalysis tier for architecture extraction
+      systemPrompt,
+      userPrompt,
+      8192,
+      3,
+      signal
+    );
+
+    const parsed = parseArchitectureExtractionResponse(response.content);
+
+    // If previewOnly requested, return recommendations in metadata without applying
+    if (previewOnly) {
+      // Ensure tasks have technicalImplementation placeholder
+      const previewTasks = base.tasks.map((t) => ({
+        ...t,
+        specification: {
+          ...t.specification,
+          technicalImplementation: (t.specification as any).technicalImplementation || {},
+        },
+      }));
+
+      return {
+        ...base,
+        tasks: previewTasks,
+        metadata: {
+          generatorVersion: base.metadata?.generatorVersion ?? '1.0.0',
+          prdId: base.metadata?.prdId ?? context.prd.id,
+          erdId: base.metadata?.erdId ?? 'erd-unknown',
+          standardsApplied: base.metadata?.standardsApplied ?? ['database', 'api'],
+          exportFormats: base.metadata?.exportFormats ?? ['json', 'yaml', 'markdown'],
+          architectureGuide: {
+            id: context.architectureGuide.id,
+            name: context.architectureGuide.name,
+          },
+          architectureRecommendations: parsed.recommendations || [],
+          architectureExtractionRaw: parsed.raw || response.content,
+        },
+      } as TaskSet;
+    }
+
+    // Apply recommendations to the base tasks
+    let modifiedTasks = applyRecommendationsToTasks(parsed.recommendations || [], base.tasks);
+    // If we have raw response, attach it to metadata for debugging
+    const extractionRaw = parsed.raw || response.content;
+    // Placeholder for implementation enrichment raw response
+    let implementationRaw: string | undefined = undefined;
+
+    // Optionally enrich tasks with detailed technical implementation guidance
+    let implSkippedReason: string | undefined = undefined;
+    // Read user setting to decide whether to attempt enrichment
+    const settings = useSettingsStore.getState();
+    const enrichmentEnabled = settings?.advanced?.enableImplementationEnrichment ?? true;
+
+    if (!enrichmentEnabled) {
+      implSkippedReason = 'implementation_enrichment_disabled';
+    } else if (options && (options as any).expandTechnicalImplementation === false) {
+      implSkippedReason = 'implementation_enrichment_disabled_via_option';
+    } else {
+      // Ensure we have API keys for enrichment
+      const router2 = getLLMRouter();
+      if (!router2.hasAnyApiKey()) {
+        implSkippedReason = 'no_api_key';
+      } else {
+        try {
+          const implResult = await enrichTasksWithImplementation(modifiedTasks, context, signal);
+          modifiedTasks = implResult.tasks;
+          implementationRaw = implementationRaw || implResult.raw; // prefer existing if already set
+        } catch (err) {
+          console.warn('Task implementation enrichment failed, continuing with modified tasks', err);
+          implSkippedReason = 'implementation_enrichment_failed';
+        }
+      }
+    }
+
+    // Recalculate summary and ensure metadata conforms to TaskSetMetadata
+    // Ensure every task has technicalImplementation object
+    const tasksWithImpl = modifiedTasks.map((t) => ({
+      ...t,
+      specification: {
+        ...t.specification,
+        technicalImplementation: (t.specification as any).technicalImplementation || {},
+      },
+    }));
+
+    // Determine implementation enrichment status
+    const anyEnriched = tasksWithImpl.some((t) => {
+      const impl = (t.specification as any).technicalImplementation;
+      return impl && Object.keys(impl).length > 0;
+    });
+
+    const updatedTaskSet: TaskSet = {
+      ...base,
+      tasks: tasksWithImpl,
+      summary: {
+        ...base.summary,
+        totalTasks: tasksWithImpl.length,
+      },
+      metadata: {
+        generatorVersion: base.metadata?.generatorVersion ?? '1.0.0',
+        prdId: base.metadata?.prdId ?? context.prd.id,
+        erdId: base.metadata?.erdId ?? 'erd-unknown',
+        standardsApplied: base.metadata?.standardsApplied ?? (base.metadata?.standardsApplied ?? ['database', 'api']),
+        exportFormats: base.metadata?.exportFormats ?? ['json', 'yaml', 'markdown'],
+        architectureGuide: {
+          id: context.architectureGuide.id,
+          name: context.architectureGuide.name,
+        },
+        architectureRecommendations: parsed.recommendations || [],
+        ...(extractionRaw ? { architectureExtractionRaw: extractionRaw } : {}),
+        ...(implSkippedReason ? { architectureExtractionSkipped: implSkippedReason } : {}),
+        ...(implementationRaw ? { architectureImplementationRaw: implementationRaw } : {}),
+        ...(implSkippedReason ? { architectureImplementationSkipped: implSkippedReason } : {}),
+        architectureImplementationStatus: anyEnriched ? 'enriched' : (implSkippedReason ? 'skipped' : 'not_enriched'),
+      },
+    };
+
+    return updatedTaskSet;
+  } catch (error) {
+    console.error('Architecture extraction failed:', error);
+    // Return base as fallback but ensure metadata placeholders
+    return {
+      ...base,
+      metadata: {
+        generatorVersion: base.metadata?.generatorVersion ?? '1.0.0',
+        prdId: base.metadata?.prdId ?? context.prd.id,
+        erdId: base.metadata?.erdId ?? 'erd-unknown',
+        standardsApplied: base.metadata?.standardsApplied ?? ['database', 'api'],
+        exportFormats: base.metadata?.exportFormats ?? ['json', 'yaml', 'markdown'],
+        architectureGuide: {
+          id: context.architectureGuide.id,
+          name: context.architectureGuide.name,
+        },
+        architectureRecommendations: [],
+        architectureExtractionSkipped: 'error',
+      },
+    };
+  }
+}
+
+
+
+/**
+ * Apply parsed architecture recommendations to an array of tasks
+ */
+function applyRecommendationsToTasks(recommendations: any[], tasks: ProgrammableTask[]): ProgrammableTask[] {
+  return applyRecommendationsToTasksRaw(recommendations, tasks);
+}
+
+function applyRecommendationsToTasksRaw(recommendations: any[], tasks: ProgrammableTask[]): ProgrammableTask[] {
+  const resultTasks = [...tasks.map((t) => ({ ...t }))];
+
+  for (const rec of recommendations) {
+    if (rec.action === 'add_task') {
+      const newTask: ProgrammableTask = {
+        id: generateTaskId(),
+        title: rec.title || 'New Task',
+        type: (rec.type as any) || 'documentation',
+        tier: (rec.tier as any) || 'T2',
+        module: rec.module || 'integration',
+        priority: rec.priority || 'medium',
+        dependencies: rec.dependencies || [],
+        dependents: [],
+        specification: rec.specification || { objective: rec.title || 'See spec', context: rec.context || '', requirements: rec.specification?.requirements || [] },
+        acceptanceCriteria: rec.specification?.acceptanceCriteria || [],
+        estimatedComplexity: 'moderate',
+        tags: rec.tags || ['architecture-guidance'],
+      };
+
+      resultTasks.push(newTask);
+    } else if (rec.action === 'modify_task') {
+      // Locate task by id or title
+      let target: ProgrammableTask | undefined;
+      if (rec.target?.byId) {
+        target = resultTasks.find((t) => t.id === rec.target.byId);
+      } else if (rec.target?.byTitle) {
+        target = resultTasks.find((t) => t.title === rec.target.byTitle);
+      }
+
+      if (target) {
+        if (rec.changes?.tier) target.tier = rec.changes.tier;
+        if (rec.changes?.priority) target.priority = rec.changes.priority;
+        if (rec.changes?.addTechnicalNotes) target.specification.technicalNotes = [...(target.specification.technicalNotes || []), ...(rec.changes.addTechnicalNotes || [])];
+        if (rec.changes?.addTags) target.tags = [...new Set([...(target.tags || []), ...(rec.changes.addTags || [])])];
+        if (rec.changes?.addDependencies) target.dependencies = [...new Set([...(target.dependencies || []), ...(rec.changes.addDependencies || [])])];
+      }
+    }
+  }
+
+  return resultTasks;
+}
+
+function parseArchitectureExtractionResponse(content: string): { recommendations: any[]; raw?: string } {
+  // ensure content length limit
+  const trimmed = (content || '').slice(0, 200000);
+  let jsonContent = trimmed.trim();
+
+  // Strip code fences
+  if (jsonContent.startsWith('```')) {
+    const match = jsonContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (match) jsonContent = match[1].trim();
+  }
+
+  try {
+    const parsed = JSON.parse(jsonContent);
+    if (Array.isArray(parsed.recommendations) || parsed.recommendations) {
+      return { recommendations: parsed.recommendations || [], raw: content };
+    }
+
+    // Fallback - maybe the root is the recommendations array
+    if (Array.isArray(parsed)) {
+      return { recommendations: parsed, raw: content };
+    }
+
+    return { recommendations: [], raw: content };
+  } catch (error) {
+    console.warn('Failed to parse architecture extraction response. Raw (truncated):', (content || '').slice(0, 1000));
+    return { recommendations: [], raw: content };
+  }
+}
+
+/**
+ * Enrich tasks with technical implementation guidance using LLM
+ */
+async function enrichTasksWithImplementation(
+  tasks: ProgrammableTask[],
+  context: TaskGenerationContext,
+  signal?: AbortSignal
+): Promise<{ tasks: ProgrammableTask[]; raw?: string }> {
+  if (!context.architectureGuide || !context.architectureGuide.content) return { tasks };
+
+  let responseContent: string | undefined;
+
+  try {
+    const prdSummary = `${context.prd.projectName} - ${context.prd.moduleName} - ${context.prd.version}`;
+    const tasksSummary = tasks
+      .map((t) => `${t.id}: ${t.title}\nRequirements:\n- ${t.specification.requirements.join('\n- ')}`)
+      .join('\n\n');
+
+    const userPrompt = buildTaskImplementationPrompt(tasksSummary, prdSummary, context.architectureGuide.content || '');
+
+    const systemPrompt = usePromptStore.getState().getPrompt('taskImplementation');
+    const router = getLLMRouter();
+
+    const response = await router.callWithRetry('T3', systemPrompt, userPrompt, 8192, 2, signal);
+    responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+
+    // Parse response JSON with robust extraction
+    let jsonContent = (responseContent || '').trim();
+    if (jsonContent.startsWith('```')) {
+      const match = jsonContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (match) jsonContent = match[1].trim();
+    }
+
+    const tryParseJson = (text: string): any | null => {
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        return null;
+      }
+    };
+
+    // Helper to find the first balanced JSON block (object or array)
+    const extractBalancedJson = (text: string): string | null => {
+      const startIdx = Math.min(
+        ...['{', '[']
+          .map((ch) => text.indexOf(ch))
+          .filter((i) => i >= 0)
+      );
+
+      if (isFinite(startIdx)) {
+        const open = text[startIdx];
+        const close = open === '{' ? '}' : ']';
+        let depth = 0;
+        for (let i = startIdx; i < text.length; i++) {
+          const c = text[i];
+          if (c === open) depth++;
+          else if (c === close) depth--;
+
+          if (depth === 0) {
+            return text.slice(startIdx, i + 1);
+          }
+        }
+      }
+
+      return null;
+    };
+
+    let parsed: any = tryParseJson(jsonContent);
+
+    if (!parsed) {
+      // Try to extract balanced substring
+      const candidate = extractBalancedJson(jsonContent);
+      if (candidate) parsed = tryParseJson(candidate);
+    }
+
+    if (!parsed) {
+      // As a last resort, try to progressively trim trailing chars until valid
+      let attempt = jsonContent;
+      while (attempt.length > 20) {
+        attempt = attempt.slice(0, -1);
+        const p = tryParseJson(attempt);
+        if (p) {
+          parsed = p;
+          break;
+        }
+      }
+    }
+
+    if (!parsed) {
+      console.warn('Failed to parse task implementation JSON. Raw (truncated):', (responseContent || '').slice(0, 1000));
+      return { tasks, raw: responseContent };
+    }
+
+    // Robust extraction of implementations array
+    let implementations: any[] = [];
+
+    if (Array.isArray(parsed.implementations)) {
+      implementations = parsed.implementations;
+    } else if (Array.isArray(parsed)) {
+      implementations = parsed;
+    } else {
+      // Try to find an array-like field that looks like implementations
+      for (const k of Object.keys(parsed)) {
+        if (Array.isArray((parsed as any)[k])) {
+          const candidate = (parsed as any)[k];
+          if (candidate.length > 0 && (candidate[0].id || candidate[0].title || candidate[0].stack || candidate[0].steps)) {
+            implementations = candidate;
+            break;
+          }
+        }
+      }
+    }
+
+    // Apply to tasks
+    const tasksById = new Map(tasks.map((t) => [t.id, { ...t }]));
+
+    for (const impl of implementations) {
+      const target = impl.id ? tasksById.get(impl.id) : tasks.find((tt) => tt.title === impl.title);
+      if (target) {
+        target.specification.technicalNotes = target.specification.technicalNotes || [];
+
+        // Accept either { technicalImplementation: { ... } } or fields directly on impl
+        const rawImpl = impl.technicalImplementation ? impl.technicalImplementation : impl;
+
+        // Normalize fields
+        const normalizeArray = (v: any): string[] | undefined => {
+          if (v === undefined || v === null) return undefined;
+          if (Array.isArray(v)) return v.map(String);
+          if (typeof v === 'string') return v.split('\n').map((s) => s.trim()).filter(Boolean);
+          return [String(v)];
+        };
+
+        const normalized: any = {};
+        const maybeStack = normalizeArray(rawImpl.stack || rawImpl.tech || rawImpl.frameworks);
+        if (maybeStack) normalized.stack = maybeStack;
+        const maybeLibs = normalizeArray(rawImpl.libraries || rawImpl.libs);
+        if (maybeLibs) normalized.libraries = maybeLibs;
+        const maybeInfra = normalizeArray(rawImpl.infra || rawImpl.infrastructure);
+        if (maybeInfra) normalized.infra = maybeInfra;
+        const maybeConfig = normalizeArray(rawImpl.config);
+        if (maybeConfig) normalized.config = maybeConfig;
+        const maybeSteps = normalizeArray(rawImpl.steps || rawImpl.plan || rawImpl.implementationSteps);
+        if (maybeSteps) normalized.steps = maybeSteps;
+        const maybeCode = normalizeArray(rawImpl.codeExamples || rawImpl.code);
+        if (maybeCode) normalized.codeExamples = maybeCode;
+        if (rawImpl.estimatedEffortHours || rawImpl.estimatedEffort) {
+          const n = Number(rawImpl.estimatedEffortHours ?? rawImpl.estimatedEffort);
+          if (!Number.isNaN(n)) normalized.estimatedEffortHours = n;
+        }
+
+        // Only set if there's at least one property
+        if (Object.keys(normalized).length > 0) {
+          (target.specification as any).technicalImplementation = normalized;
+        } else {
+          // leave existing implementation if present
+          (target.specification as any).technicalImplementation = (target.specification as any).technicalImplementation || {};
+        }
+      }
+    }
+
+    return { tasks: tasks.map((t) => tasksById.get(t.id) || t), raw: response.content };
+  } catch (err) {
+    console.error('Failed to enrich tasks with implementation details:', err);
+    return { tasks };
+  }
+}
+
 
 function generateDatabaseMigrationTask(
   entity: Entity,

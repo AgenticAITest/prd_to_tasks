@@ -4,7 +4,8 @@ import type {
   AppSettings,
   StandardsConfig,
   AppearanceSettings,
-  TierModelConfig
+  TierModelConfig,
+  AdvancedSettings
 } from '@/types/settings';
 import type { LLMProvider, TaskTierType } from '@/types/llm';
 import { defaultSettings } from '@/types/settings';
@@ -22,6 +23,8 @@ interface SettingsState extends AppSettings {
   setModelForTier: (tier: TaskTierType, provider: LLMProvider, model: string) => void;
   updateStandards: (standards: Partial<StandardsConfig>) => void;
   updateAppearance: (appearance: Partial<AppearanceSettings>) => void;
+  // Advanced settings helper
+  updateAdvanced: (adv: Partial<AdvancedSettings>) => void;
   resetToDefaults: () => void;
   importSettings: (settings: Partial<AppSettings>) => void;
   exportSettings: () => AppSettings;
@@ -54,6 +57,15 @@ export const useSettingsStore = create<SettingsState>()(
           apiKeys: {
             ...state.apiKeys,
             [provider]: key,
+          },
+        }));
+      },
+
+      updateAdvanced: (adv: Partial<AdvancedSettings>) => {
+        set(state => ({
+          advanced: {
+            ...state.advanced,
+            ...adv,
           },
         }));
       },

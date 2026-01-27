@@ -172,6 +172,9 @@ export interface AdvancedSettings {
   debugMode: boolean;
   llmRetryAttempts: number;
   llmTimeout: number;        // seconds
+  // LLM enrichment & preview
+  enableImplementationEnrichment?: boolean;
+  previewArchitectureRecommendations?: boolean;
 }
 
 // Validation for settings
@@ -331,5 +334,7 @@ export const defaultSettings: AppSettings = {
     debugMode: false,
     llmRetryAttempts: 3,
     llmTimeout: 120,
+    enableImplementationEnrichment: true,
+    previewArchitectureRecommendations: true,
   },
 };

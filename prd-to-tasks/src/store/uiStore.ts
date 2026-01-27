@@ -10,6 +10,7 @@ export type ModalType =
   | 'entity-edit'
   | 'field-edit'
   | 'relationship-edit'
+  | 'preview-architecture'
   | null;
 
 export interface ConfirmationConfig {

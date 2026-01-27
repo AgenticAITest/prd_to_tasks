@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Play, Download, Filter, Search, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,8 +16,14 @@ import {
 import { useTaskStore } from '@/store/taskStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useUIStore } from '@/store/uiStore';
+import { usePRDStore } from '@/store/prdStore';
+import { useEntityStore } from '@/store/entityStore';
+import { useERDStore } from '@/store/erdStore';
+import { generateTasks, generateTasksWithArchitecture } from '@/core/task-generator';
+import { toast } from 'sonner';
+import { useSettingsStore } from '@/store/settingsStore';
 import { cn } from '@/lib/utils';
-import type { TaskType, TaskTier, ProgrammableTask } from '@/types/task';
+import type { TaskType, TaskTier } from '@/types/task';
 
 const TASK_TYPE_LABELS: Record<TaskType, string> = {
   'database-migration': 'Database',
@@ -61,8 +67,14 @@ export function TaskGenerationPhase() {
     setTaskSet,
     getFilteredTasks,
   } = useTaskStore();
-  const { setPhaseStatus } = useProjectStore();
+  const { setPhaseStatus, addFile, setArchitectureGuide, getArchitectureGuide, getFilesByType, clearArchitectureGuide } = useProjectStore();
   const { openModal } = useUIStore();
+  const prdStore = usePRDStore();
+  const entityStore = useEntityStore();
+  const erdStore = useERDStore();
+
+  // Ref to the hidden architecture file input
+  const archInputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredTasks = getFilteredTasks().filter((task) => {
     if (typeFilter !== 'all' && task.type !== typeFilter) return false;
@@ -71,148 +83,121 @@ export function TaskGenerationPhase() {
   });
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
+  const taskSet = useTaskStore((s) => s.taskSet);
+
+  // Status indicators
+  const recommendationsApplied = !!(taskSet && taskSet.metadata && Array.isArray(taskSet.metadata.architectureRecommendations) && taskSet.metadata.architectureRecommendations.length > 0);
+  const extractionSkipped = taskSet?.metadata?.architectureExtractionSkipped;
+  const implStatus = taskSet?.metadata?.architectureImplementationStatus as 'enriched' | 'skipped' | 'not_enriched' | 'failed' | undefined;
+  const hasAnyEnriched = implStatus === 'enriched' || tasks.some((t) => {
+    const impl = (t.specification as any).technicalImplementation;
+    return impl && Object.keys(impl).length > 0;
+  });
 
   const handleGenerate = async () => {
     setGenerating(true, 0);
 
-    // Simulate task generation
-    for (let i = 0; i <= 100; i += 5) {
-      await new Promise((r) => setTimeout(r, 100));
+    // Simulate progress
+    for (let i = 0; i <= 90; i += 10) {
+      await new Promise((r) => setTimeout(r, 120));
       setGenerating(true, i);
     }
 
-    // Generate sample tasks
-    const sampleTasks: ProgrammableTask[] = [
-      {
-        id: 'TASK-001',
-        title: 'Create users table migration',
-        type: 'database-migration',
-        tier: 'T1',
-        module: 'auth',
-        priority: 'critical',
-        dependencies: [],
-        dependents: ['TASK-002'],
-        specification: {
-          objective: 'Create the users table with all required fields',
-          context: 'Foundation for user authentication and management',
-          requirements: [
-            'Create users table with id, email, password_hash, name fields',
-            'Add unique constraint on email',
-            'Add created_at and updated_at timestamps',
-            'Add soft delete support with deleted_at field',
-          ],
-        },
-        acceptanceCriteria: [
-          'Migration runs successfully',
-          'Table is created with correct schema',
-          'Indexes are created for performance',
-        ],
-        estimatedComplexity: 'simple',
-        tags: ['database', 'auth', 'users'],
-      },
-      {
-        id: 'TASK-002',
-        title: 'Implement User CRUD API endpoints',
-        type: 'api-crud',
-        tier: 'T2',
-        module: 'auth',
-        priority: 'high',
-        dependencies: ['TASK-001'],
-        dependents: ['TASK-003'],
-        specification: {
-          objective: 'Create RESTful API endpoints for user management',
-          context: 'Provides API layer for user operations',
-          requirements: [
-            'GET /api/v1/users - List users with pagination',
-            'GET /api/v1/users/:id - Get user by ID',
-            'POST /api/v1/users - Create new user',
-            'PUT /api/v1/users/:id - Update user',
-            'DELETE /api/v1/users/:id - Soft delete user',
-          ],
-        },
-        acceptanceCriteria: [
-          'All endpoints return correct status codes',
-          'Validation errors are handled properly',
-          'Pagination works correctly',
-        ],
-        estimatedComplexity: 'moderate',
-        tags: ['api', 'auth', 'users'],
-      },
-      {
-        id: 'TASK-003',
-        title: 'Build User List UI component',
-        type: 'ui-list',
-        tier: 'T2',
-        module: 'auth',
-        priority: 'medium',
-        dependencies: ['TASK-002'],
-        dependents: [],
-        specification: {
-          objective: 'Create a data table component for displaying users',
-          context: 'Admin interface for user management',
-          requirements: [
-            'Display users in a sortable, filterable table',
-            'Include columns: Name, Email, Status, Created Date, Actions',
-            'Add pagination controls',
-            'Include search functionality',
-          ],
-        },
-        acceptanceCriteria: [
-          'Table displays user data correctly',
-          'Sorting works on all sortable columns',
-          'Filtering and search work as expected',
-        ],
-        estimatedComplexity: 'moderate',
-        tags: ['ui', 'auth', 'users'],
-      },
-    ];
+    // Ensure we have PRD and entities
+    const prd = prdStore.prd;
+    const entities = entityStore.entities;
+    const relationships = entityStore.relationships;
+    const dbml = erdStore.dbml;
 
-    setTaskSet({
-      id: 'taskset-1',
-      projectName: 'Sample Project',
-      moduleName: 'auth',
-      version: '1.0.0',
-      generatedAt: new Date(),
-      tasks: sampleTasks,
-      summary: {
-        totalTasks: sampleTasks.length,
-        byType: {
-          'database-migration': 1,
-          'api-crud': 1,
-          'api-custom': 0,
-          'ui-list': 1,
-          'ui-form': 0,
-          'ui-detail': 0,
-          'ui-modal': 0,
-          'ui-dashboard': 0,
-          'ui-report': 0,
-          'validation': 0,
-          'business-logic': 0,
-          'workflow': 0,
-          'integration': 0,
-          'test': 0,
-          'documentation': 0,
-        },
-        byTier: { T1: 1, T2: 2, T3: 0, T4: 0 },
-        byModule: { auth: 3 },
-        byPriority: { critical: 1, high: 1, medium: 1, low: 0 },
-        criticalPath: ['TASK-001', 'TASK-002', 'TASK-003'],
-        estimatedComplexity: {
-          trivial: 0,
-          simple: 1,
-          moderate: 2,
-          complex: 0,
-          veryComplex: 0,
-        },
-      },
-      metadata: {
-        generatorVersion: '1.0.0',
-        prdId: 'prd-1',
-        erdId: 'erd-1',
-        standardsApplied: ['database', 'api'],
-        exportFormats: ['json', 'yaml', 'markdown'],
-      },
-    });
+    if (!prd) {
+      // Fallback to sample if PRD is missing
+      console.warn('PRD missing — generating sample tasks');
+    }
+
+    // Get attached architecture guide, if any
+    const attached = getArchitectureGuide();
+
+    if (attached && (!attached.content || attached.content.trim() === '')) {
+      toast('Attached architecture guide appears to be empty or unreadable; extraction will be skipped.');
+    }
+
+    const context = {
+      prd: prd || ({ id: 'prd-1', projectName: 'Sample Project', moduleName: 'auth', version: '1.0.0', overview: { description: '', objectives: [], scope: { included: [], excluded: [] }, assumptions: [], constraints: [] }, userRoles: [], functionalRequirements: [], dataRequirements: { entities: [], enums: [] }, nonFunctionalRequirements: {}, qualityScore: { overall: 0, breakdown: { completeness: 0, clarity: 0, consistency: 0, testability: 0 }, details: [] }, analysisResults: { crudCoverage: [], workflowSummary: [], screenCoverage: { totalScreens: 0, screensByType: {}, orphanedScreens: [], missingScreens: [] }, entityUsage: [] }, rawContent: '', createdAt: new Date(), updatedAt: new Date() } as any),
+      entities: entities || [],
+      relationships: relationships || [],
+      dbml: dbml || '',
+      architectureGuide: attached
+        ? { id: attached.id, name: attached.name, content: attached.content, format: attached.format }
+        : undefined,
+    };
+
+    // Call the async generator that may use LLM if architecture guide attached
+    try {
+      setGenerating(true, 95);
+
+      // Respect preview setting in advanced settings
+      const settings = useSettingsStore.getState();
+      if (settings.advanced.previewArchitectureRecommendations && attached && attached.content) {
+        // Request preview only
+        const previewSet = await generateTasksWithArchitecture(context as any, undefined, undefined, true);
+
+        // Open preview modal with recommendations
+        useUIStore.getState().openModal('preview-architecture', {
+          recommendations: previewSet.metadata?.architectureRecommendations || [],
+          context,
+        });
+
+        setGenerating(false);
+        return;
+      }
+
+      // Otherwise apply directly
+      const taskSet = await generateTasksWithArchitecture(context as any, undefined);
+
+      // Finish progress
+      setGenerating(true, 100);
+
+      setTaskSet({
+        ...taskSet,
+        projectName: prd?.projectName || 'Sample Project',
+      });
+
+      // Notify user if architecture extraction was skipped or failed
+      if (taskSet.metadata?.architectureExtractionSkipped) {
+        const reason = taskSet.metadata.architectureExtractionSkipped;
+        if (reason === 'no_api_key') {
+          toast('Architecture extraction skipped: No LLM API key configured.');
+        } else {
+          toast(`Architecture extraction skipped: ${reason}`);
+        }
+      } else if (taskSet.metadata?.architectureExtractionRaw) {
+        toast.success('Architecture recommendations applied from attached guide.');
+      }
+
+      // Notify user if implementation enrichment was skipped/failed
+      const implStatus = taskSet.metadata?.architectureImplementationStatus;
+      if (implStatus === 'skipped' && taskSet.metadata?.architectureImplementationSkipped) {
+        const reason = taskSet.metadata.architectureImplementationSkipped;
+        if (reason === 'no_api_key') {
+          toast('Implementation enrichment skipped: No LLM API key configured. Add an API key in Settings → API Keys to enable enrichment.');
+        } else if (reason === 'implementation_enrichment_disabled') {
+          toast('Implementation enrichment is disabled in Advanced settings.');
+        } else {
+          toast(`Implementation enrichment skipped: ${reason}`);
+        }
+      } else if (implStatus === 'failed') {
+        toast.error('Implementation enrichment attempted but failed. Check console for details.');
+      } else if (implStatus === 'enriched') {
+        toast.success('Tasks enriched with technical implementation guidance.');
+      }
+    } catch (err) {
+      console.error('Task generation failed:', err);
+      setGenerating(false);
+      toast.error('Task generation failed. See console for details.');
+      // Fallback to synchronous generator
+      const fallback = generateTasks(context as any);
+      setTaskSet({ ...fallback, projectName: prd?.projectName || 'Sample Project' });
+    }
 
     setGenerating(false);
     setPhaseStatus(4, 'completed');
@@ -232,21 +217,137 @@ export function TaskGenerationPhase() {
             Generate programmable development tasks
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={handleGenerate} disabled={isGenerating} variant="outline">
-            {isGenerating ? (
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4 mr-2" />
-            )}
-            {isGenerating ? 'Generating...' : 'Generate Tasks'}
-          </Button>
-          {tasks.length > 0 && (
-            <Button onClick={handleExport}>
-              <Download className="h-4 w-4 mr-2" />
-              Export
+
+        {/* Architecture guide attach / select */}
+        <div className="flex items-center gap-3">
+          <div className="text-sm">
+            <div className="mb-1 font-medium">Architecture Guide</div>
+            <div className="text-xs text-muted-foreground">
+              Attach a technical architecture guide to influence task generation
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+              {/* Hidden file input (triggered programmatically) */}
+            <input
+              id="arch-upload"
+              ref={archInputRef}
+              type="file"
+              accept=".md,.txt,.html,.json,.yaml,.yml,.pdf"
+              className="hidden"
+              onChange={async (e) => {
+                // Capture the input element synchronously to avoid React's event pooling
+                const inputEl = e.currentTarget as HTMLInputElement;
+                const file = inputEl.files?.[0];
+                if (!file) return;
+                const format = file.name.split('.').pop()?.toLowerCase();
+                let content = '';
+                try {
+                  // Try to read text content; for binary (pdf) leave empty
+                  content = await file.text();
+                } catch (err) {
+                  console.warn('Unable to read file as text');
+                }
+
+                const newId = addFile({
+                  name: file.name,
+                  type: 'other',
+                  content: content,
+                  format: (format as any) || 'txt',
+                  size: file.size,
+                });
+
+                setArchitectureGuide(newId);
+                // Clear input safely
+                try {
+                  inputEl.value = '';
+                } catch (err) {
+                  // ignore
+                }
+              }}
+            />
+
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => archInputRef.current?.click()}
+            >
+              Attach
             </Button>
-          )}
+
+            {/* Select existing other files */}
+            <select
+              className="border rounded px-2 py-1 text-sm"
+              onChange={(e) => {
+                const id = e.target.value;
+                if (!id) return;
+                setArchitectureGuide(id);
+              }}
+            >
+              <option value="">Select existing</option>
+              {getFilesByType('other').map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+
+            {/* Show attached file and remove */}
+            {getArchitectureGuide() ? (
+              <div className="flex items-center gap-2">
+                <div className="text-sm">{getArchitectureGuide()?.name}</div>
+                <Button size="sm" variant="ghost" onClick={() => clearArchitectureGuide()}>
+                  Remove
+                </Button>
+              </div>
+            ) : null}
+
+            <Button onClick={handleGenerate} disabled={isGenerating} variant="outline">
+              {isGenerating ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
+              {isGenerating ? 'Generating...' : 'Generate Tasks'}
+            </Button>
+
+            {tasks.length > 0 && (
+              <>
+                <Button onClick={handleExport}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
+
+                <div className="flex items-center gap-2 ml-2">
+                  {recommendationsApplied ? (
+                    <Badge variant="default" className="bg-green-600 text-white text-xs">
+                      Architecture recommendations applied
+                    </Badge>
+                  ) : extractionSkipped ? (
+                    <Badge variant="destructive" className="text-xs">
+                      Extraction skipped: {extractionSkipped}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">
+                      No recommendations
+                    </Badge>
+                  )}
+
+                  {implStatus === 'enriched' || hasAnyEnriched ? (
+                    <Badge variant="default" className="bg-emerald-600 text-white text-xs">
+                      Implementation enriched
+                    </Badge>
+                  ) : implStatus === 'skipped' ? (
+                    <Badge variant="destructive" className="text-xs">Enrichment skipped</Badge>
+                  ) : implStatus === 'failed' ? (
+                    <Badge variant="destructive" className="text-xs">Enrichment failed</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">Not enriched</Badge>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -449,6 +550,55 @@ export function TaskGenerationPhase() {
                           ))}
                         </ul>
                       </div>
+
+                      {/* Technical implementation */}
+                      {selectedTask.specification && (selectedTask.specification as any).technicalImplementation && (
+                        <div>
+                          <h4 className="font-medium mb-1">Technical Implementation</h4>
+                          <div className="text-sm text-muted-foreground space-y-2">
+                            {(selectedTask.specification as any).technicalImplementation.stack && (
+                              <div>
+                                <strong>Stack:</strong> {(selectedTask.specification as any).technicalImplementation.stack.join(', ')}
+                              </div>
+                            )}
+
+                            {(selectedTask.specification as any).technicalImplementation.libraries && (
+                              <div>
+                                <strong>Libraries:</strong> {(selectedTask.specification as any).technicalImplementation.libraries.join(', ')}
+                              </div>
+                            )}
+
+                            {(selectedTask.specification as any).technicalImplementation.steps && (
+                              <div>
+                                <strong>Implementation steps:</strong>
+                                <ol className="list-decimal list-inside text-sm mt-1">
+                                  {(selectedTask.specification as any).technicalImplementation.steps.map((s: string, i: number) => (
+                                    <li key={i}>{s}</li>
+                                  ))}
+                                </ol>
+                              </div>
+                            )}
+
+                            {(selectedTask.specification as any).technicalImplementation.codeExamples && (
+                              <div>
+                                <strong>Code / Commands:</strong>
+                                <div className="mt-1 space-y-2">
+                                  {(selectedTask.specification as any).technicalImplementation.codeExamples.map((c: string, i: number) => (
+                                    <pre key={i} className="p-2 bg-surface rounded text-xs overflow-auto">{c}</pre>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {typeof (selectedTask.specification as any).technicalImplementation.estimatedEffortHours === 'number' && (
+                              <div>
+                                <strong>Estimated effort:</strong> {(selectedTask.specification as any).technicalImplementation.estimatedEffortHours} hours
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex flex-wrap gap-2">
                         {selectedTask.tags.map((tag) => (
                           <Badge key={tag} variant="outline">

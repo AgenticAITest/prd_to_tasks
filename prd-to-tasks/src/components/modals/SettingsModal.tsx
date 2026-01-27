@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Eye, EyeOff, ExternalLink, Check, X, Loader2, RefreshCw, Download, Upload, RotateCcw, Edit2 } from 'lucide-react';
+import { Eye, EyeOff, ExternalLink, Check, X, Loader2, RefreshCw, Upload, Edit2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -49,8 +50,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const appearance = useSettingsStore((s) => s.appearance);
   const updateAppearance = useSettingsStore((s) => s.updateAppearance);
 
+  // Advanced settings selectors for reactive toggles
+  const enableImplementationEnrichment = useSettingsStore((s) => s.advanced.enableImplementationEnrichment);
+  const previewArchitectureRecommendations = useSettingsStore((s) => s.advanced.previewArchitectureRecommendations);
+  const updateAdvanced = useSettingsStore((s) => s.updateAdvanced);
+
   // Ensure settingsTab has a valid value
-  const validTabs = ['api-keys', 'models', 'prompts', 'standards', 'appearance'];
+  const validTabs = ['api-keys', 'models', 'prompts', 'standards', 'appearance', 'advanced'];
   const currentTab = validTabs.includes(settingsTab) ? settingsTab : 'api-keys';
 
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -136,12 +142,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           onValueChange={setSettingsTab}
           className="flex-1 overflow-hidden flex flex-col"
         >
-          <TabsList className="grid grid-cols-5 w-full">
+          <TabsList className="grid grid-cols-6 w-full">
             <TabsTrigger value="api-keys">API Keys</TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
             <TabsTrigger value="prompts">Prompts</TabsTrigger>
             <TabsTrigger value="standards">Standards</TabsTrigger>
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
+            <TabsTrigger value="advanced">Advanced</TabsTrigger>
           </TabsList>
 
           <div className="flex-1 overflow-auto mt-4">
@@ -417,39 +424,29 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   <Upload className="h-3.5 w-3.5 mr-1" />
                   Import
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    const json = exportPrompts();
-                    const blob = new Blob([json], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'prd-to-tasks-prompts.json';
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    toast.success('Prompts exported');
-                  }}
-                  disabled={getCustomizedKeys().length === 0}
-                >
-                  <Download className="h-3.5 w-3.5 mr-1" />
+                <Button size="sm" variant="ghost" onClick={() => {
+                  const exported = exportPrompts();
+                  const blob = new Blob([exported], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'prompts.json';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}>
                   Export
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
+                <Button size="sm" variant="destructive" onClick={() => {
+                  if (confirm('Reset all prompts to defaults?')) {
                     resetAllPrompts();
-                    toast.success('All prompts reset to defaults');
-                  }}
-                  disabled={getCustomizedKeys().length === 0}
-                  className="ml-auto"
-                >
-                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                  Reset All
+                    toast.success('Prompts reset to defaults');
+                  }
+                }}>
+                  Reset
                 </Button>
               </div>
+
+
             </TabsContent>
 
             {/* Standards Tab */}
@@ -504,6 +501,35 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                       <SelectItem value="large">Large</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* Advanced Tab */}
+            <TabsContent value="advanced" className="mt-0 space-y-4">
+              <div className="space-y-2 p-3 border rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-base">LLM Enrichment</Label>
+                    <p className="text-xs text-muted-foreground">Enable LLM-based technical implementation enrichment after task generation</p>
+                  </div>
+                  <Switch
+                    checked={!!enableImplementationEnrichment}
+                    onCheckedChange={(val: boolean) => updateAdvanced({ enableImplementationEnrichment: val })}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 p-3 border rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-base">Preview Architecture Recommendations</Label>
+                    <p className="text-xs text-muted-foreground">Show LLM-extracted recommendations in a preview modal before applying</p>
+                  </div>
+                  <Switch
+                    checked={!!previewArchitectureRecommendations}
+                    onCheckedChange={(val: boolean) => updateAdvanced({ previewArchitectureRecommendations: val })}
+                  />
                 </div>
               </div>
             </TabsContent>

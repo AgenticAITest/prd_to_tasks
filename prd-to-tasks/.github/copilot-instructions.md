@@ -50,6 +50,8 @@ No test script exists; add tests under `src/` and a `test` script if needed.
 - Parse markdown: `import { markdownParser } from 'src/core/prd-parser/MarkdownParser'; const parsed = markdownParser.parse(markdownText);`
 - Call LLM with retry: `getLLMRouter(cfg).callWithRetry('prdAnalysis', systemPrompt, userPrompt)` (observe abort signal handling).
 - Update global router config: `updateLLMRouter(config)` to change keys/models at runtime.
+- Task generation supports an optional attached technical architecture guide. Attach a file in the Task Generation UI (or add via `projectStore.addFile`) and mark it with `project.architectureGuideFileId`; the task generator reads the file content and includes a reference in `TaskSet.metadata.architectureGuide` and appends a short summary to `specification.technicalNotes` for generated tasks.
+- If an LLM provider and API key are configured, the generator will optionally call the `architectureExtraction` prompt to extract actionable recommendations (add/modify tasks) from the guide and apply them to the generated `TaskSet`. It will then call `taskImplementation` to enrich each task with **detailed technical implementation guidance** (stack, libs, infra, step-by-step plan, code examples). See `src/core/llm/prompts/architecture-extraction.ts` and `src/core/llm/prompts/task-implementation.ts` for the expected JSON output schemas.
 
 ## What NOT to change lightly
 - `src/standards/*` JSON files — they drive naming, types, and generation rules across the pipeline.

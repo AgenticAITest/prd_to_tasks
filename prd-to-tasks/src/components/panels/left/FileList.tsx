@@ -116,11 +116,14 @@ export function FileList() {
     );
   }
 
+  const otherFiles = getFilesByType('other');
+
   return (
     <div className="space-y-4">
       {renderFileGroup('prd', prdFiles)}
       {renderFileGroup('screen', screenFiles)}
       {renderFileGroup('generated', generatedFiles)}
+      {renderFileGroup('other', otherFiles)}
     </div>
   );
 }

@@ -10,13 +10,17 @@ import { PRD_SEMANTIC_ANALYSIS_SYSTEM_PROMPT } from './prd-semantic-analysis';
 import { ENTITY_EXTRACTION_SYSTEM_PROMPT } from './entity-extraction';
 import { TASK_GENERATION_SYSTEM_PROMPT } from './task-generation';
 import { ERD_GENERATION_SYSTEM_PROMPT } from './erd-generation';
+import { ARCHITECTURE_EXTRACTION_SYSTEM_PROMPT } from './architecture-extraction';
+import { TASK_IMPLEMENTATION_SYSTEM_PROMPT } from './task-implementation';
 
 export type PromptKey =
   | 'prdAnalysis'
   | 'semanticAnalysis'
   | 'entityExtraction'
   | 'taskGeneration'
-  | 'erdGeneration';
+  | 'erdGeneration'
+  | 'architectureExtraction'
+  | 'taskImplementation';
 
 export interface PromptMetadata {
   key: PromptKey;
@@ -56,6 +60,18 @@ export const PROMPT_METADATA: PromptMetadata[] = [
     description: 'Generates detailed, self-contained development tasks from specifications',
     phase: 'Phase 4: Task Generator',
   },
+  {
+    key: 'architectureExtraction',
+    name: 'Architecture Extraction',
+    description: 'Extracts actionable recommendations from a technical architecture guide',
+    phase: 'Phase 4: Task Generator (optional)',
+  },
+  {
+    key: 'taskImplementation',
+    name: 'Task Implementation',
+    description: 'Produces concrete technical implementation guidance per task',
+    phase: 'Phase 4: Task Generator (implementation expansion)',
+  },
 ];
 
 export const DEFAULT_PROMPTS: Record<PromptKey, string> = {
@@ -64,6 +80,8 @@ export const DEFAULT_PROMPTS: Record<PromptKey, string> = {
   entityExtraction: ENTITY_EXTRACTION_SYSTEM_PROMPT,
   taskGeneration: TASK_GENERATION_SYSTEM_PROMPT,
   erdGeneration: ERD_GENERATION_SYSTEM_PROMPT,
+  architectureExtraction: ARCHITECTURE_EXTRACTION_SYSTEM_PROMPT,
+  taskImplementation: TASK_IMPLEMENTATION_SYSTEM_PROMPT,
 };
 
 export function getDefaultPrompt(key: PromptKey): string {

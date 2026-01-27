@@ -11,6 +11,8 @@ export interface Project {
   description?: string;
   createdAt: Date;
   updatedAt: Date;
+  // Optional attached architecture guide file id
+  architectureGuideFileId?: string;
 }
 
 interface ProjectState {
@@ -37,10 +39,15 @@ interface ProjectState {
   advancePhase: () => void;
 
   // File management
-  addFile: (file: Omit<ProjectFile, 'id' | 'uploadedAt'>) => void;
+  addFile: (file: Omit<ProjectFile, 'id' | 'uploadedAt'>) => string; // returns new file id
   updateFile: (fileId: string, updates: Partial<ProjectFile>) => void;
   removeFile: (fileId: string) => void;
   getFilesByType: (type: ProjectFile['type']) => ProjectFile[];
+
+  // Architecture guide helpers
+  setArchitectureGuide: (fileId: string) => void;
+  clearArchitectureGuide: () => void;
+  getArchitectureGuide: () => ProjectFile | null;
 
   // State management
   setDirty: (dirty: boolean) => void;
@@ -195,6 +202,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       files: [...state.files, newFile],
       isDirty: true,
     }));
+
+    // Return the new file id to the caller
+    return newFile.id;
   },
 
   updateFile: (fileId: string, updates: Partial<ProjectFile>) => {
@@ -204,6 +214,27 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       ),
       isDirty: true,
     }));
+  },
+
+  setArchitectureGuide: (fileId: string) => {
+    set(state => ({
+      project: state.project ? { ...state.project, architectureGuideFileId: fileId } : null,
+      isDirty: true,
+    }));
+  },
+
+  clearArchitectureGuide: () => {
+    set(state => ({
+      project: state.project ? { ...state.project, architectureGuideFileId: undefined } : null,
+      isDirty: true,
+    }));
+  },
+
+  getArchitectureGuide: () => {
+    const state = get();
+    const fileId = state.project?.architectureGuideFileId;
+    if (!fileId) return null;
+    return state.files.find((f) => f.id === fileId) || null;
   },
 
   removeFile: (fileId: string) => {

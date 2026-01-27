@@ -91,6 +91,16 @@ export interface TaskSpecification {
   // Technical notes
   technicalNotes?: string[];
 
+  // Detailed technical implementation guidance (structured)
+  technicalImplementation?: {
+    stack?: string[];             // Recommended stack (e.g., ['Node.js','Postgres'])
+    libraries?: string[];         // Suggested libraries / frameworks
+    infra?: string[];            // Infrastructure notes (queues, caches, infra services)
+    config?: string[];           // Configuration / env vars / runtime settings
+    steps?: string[];            // Step-by-step implementation plan
+    codeExamples?: string[];     // Small code snippets or cli commands
+    estimatedEffortHours?: number;
+  };
   // Edge cases to handle
   edgeCases?: string[];
 
@@ -296,6 +306,16 @@ export interface TaskSetMetadata {
   erdId: string;
   standardsApplied: string[];
   exportFormats: ('json' | 'yaml' | 'markdown')[];
+  // Optional reference to an attached architecture guide
+  architectureGuide?: { id?: string; name?: string };
+  // Optional flags to indicate LLM step outcomes
+  architectureExtractionSkipped?: string; // reason code
+  architectureExtractionRaw?: string; // raw LLM response if available
+  architectureRecommendations?: any[];
+  // Implementation enrichment status: 'enriched' | 'not_enriched' | 'skipped' | 'failed'
+  architectureImplementationStatus?: string;
+  architectureImplementationRaw?: string;
+  architectureImplementationSkipped?: string;
 }
 
 // Export formats
