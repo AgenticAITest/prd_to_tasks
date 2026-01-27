@@ -98,6 +98,9 @@ export function TaskGenerationPhase() {
     return impl && Object.keys(impl).length > 0;
   });
 
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState<{completed:number; total:number; currentTaskId?:string}>({ completed: 0, total: 0 });
+
   const handleGenerate = async () => {
     setGenerating(true, 0);
 
@@ -179,9 +182,23 @@ export function TaskGenerationPhase() {
         console.warn('Failed to initialize LLM router before extraction:', err);
       }
 
+      // Setup enrichment progress UI
+      setIsEnriching(true);
+      setEnrichProgress({ completed: 0, total: Math.max(0, entities.length), currentTaskId: undefined });
+
       let taskSet;
       try {
-        taskSet = await generateTasksWithArchitecture(context as any, undefined);
+        taskSet = await generateTasksWithArchitecture(
+          context as any,
+          undefined,
+          undefined,
+          false,
+          {
+            onEnrichmentProgress: (completed, total, currentTaskId) => {
+              setEnrichProgress({ completed, total, currentTaskId });
+            },
+          }
+        );
       } catch (err) {
         console.error('Task generation with architecture failed:', err);
         // Fallback to synchronous generator so user still gets tasks
@@ -192,6 +209,7 @@ export function TaskGenerationPhase() {
       // Finish progress
       setGenerating(true, 100);
 
+      setIsEnriching(false);
       setTaskSet({
         ...taskSet,
         projectName: prd?.projectName || 'Sample Project',
@@ -409,6 +427,17 @@ export function TaskGenerationPhase() {
                 <span>{generateProgress}%</span>
               </div>
               <Progress value={generateProgress} />
+
+              {/* Enrichment progress */}
+              {isEnriching && (
+                <div className="mt-4">
+                  <div className="flex justify-between text-sm">
+                    <span>Enriching implementations — {enrichProgress.completed}/{enrichProgress.total}</span>
+                    <span>{enrichProgress.total > 0 ? Math.round((enrichProgress.completed / enrichProgress.total) * 100) : 0}%</span>
+                  </div>
+                  <Progress value={enrichProgress.total > 0 ? (enrichProgress.completed / enrichProgress.total) * 100 : 0} />
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
