@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useProjectStore } from '@/store/projectStore';
 import type {
   TaskSet,
   ProgrammableTask,
@@ -96,6 +97,9 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
       summary: taskSet.summary,
       error: null,
     });
+
+    // Mark project dirty so save actions become enabled
+    useProjectStore.getState().setDirty(true);
   },
 
   updateTask: (taskId: string, updates: Partial<ProgrammableTask>) => {

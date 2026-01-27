@@ -20,6 +20,7 @@ import { usePRDStore } from '@/store/prdStore';
 import { useEntityStore } from '@/store/entityStore';
 import { useERDStore } from '@/store/erdStore';
 import { generateTasks, generateTasksWithArchitecture } from '@/core/task-generator';
+import { useProject } from '@/hooks/useProject';
 import { toast } from 'sonner';
 import { useSettingsStore } from '@/store/settingsStore';
 import { cn } from '@/lib/utils';
@@ -67,6 +68,8 @@ export function TaskGenerationPhase() {
     setTaskSet,
     getFilteredTasks,
   } = useTaskStore();
+
+  const { saveCurrentProject } = useProject();
   const { setPhaseStatus, addFile, setArchitectureGuide, getArchitectureGuide, getFilesByType, clearArchitectureGuide } = useProjectStore();
   const { openModal } = useUIStore();
   const prdStore = usePRDStore();
@@ -161,6 +164,19 @@ export function TaskGenerationPhase() {
         ...taskSet,
         projectName: prd?.projectName || 'Sample Project',
       });
+
+      // Persist tasks and phase state immediately
+      try {
+        // Force current phase to 4 so it is remembered on reload
+        useProjectStore.getState().setPhaseDirect(4);
+        useProjectStore.getState().setDirty(true);
+
+        await saveCurrentProject();
+        toast.success('Tasks saved');
+      } catch (err) {
+        console.error('Failed to save tasks after generation:', err);
+        toast.error('Failed to save tasks; please save the project manually');
+      }
 
       // Notify user if architecture extraction was skipped or failed
       if (taskSet.metadata?.architectureExtractionSkipped) {
