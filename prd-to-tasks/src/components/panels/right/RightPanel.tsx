@@ -26,7 +26,7 @@ export function RightPanel() {
   if (currentPhase === 4) {
     return (
       <ScrollArea className="h-full">
-        <div className="p-3 space-y-4">
+        <div className="p-3 space-y-4 min-w-0">
           <OutputPreview />
         </div>
       </ScrollArea>
@@ -35,7 +35,7 @@ export function RightPanel() {
 
   return (
     <ScrollArea className="h-full">
-      <div className="p-3 space-y-4">
+      <div className="p-3 space-y-4 min-w-0">
         <Tabs defaultValue="quality">
           <TabsList className="w-full grid grid-cols-3">
             <TabsTrigger value="quality">

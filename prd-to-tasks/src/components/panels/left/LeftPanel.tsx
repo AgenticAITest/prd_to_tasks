@@ -18,7 +18,7 @@ export function LeftPanel() {
   return (
     <div className="h-full flex flex-col">
       <ScrollArea className="flex-1">
-        <div className="p-3 space-y-4">
+        <div className="p-3 space-y-4 min-w-0">
           <FileUploader />
           <FileList />
         </div>
