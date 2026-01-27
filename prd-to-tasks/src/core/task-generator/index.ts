@@ -276,6 +276,7 @@ export async function generateTasksWithArchitecture(
 
     // Optionally enrich tasks with detailed technical implementation guidance
     let implSkippedReason: string | undefined = undefined;
+    let implParseFailed = false;
     // Read user setting to decide whether to attempt enrichment
     const settings = useSettingsStore.getState();
     const enrichmentEnabled = settings?.advanced?.enableImplementationEnrichment ?? true;
@@ -294,6 +295,18 @@ export async function generateTasksWithArchitecture(
           const implResult = await enrichTasksWithImplementation(modifiedTasks, context, signal);
           modifiedTasks = implResult.tasks;
           implementationRaw = implementationRaw || implResult.raw; // prefer existing if already set
+
+          // If we received raw output but no task was enriched, mark parsing failure so metadata reflects it
+          const hadImpl = modifiedTasks.some((t) => {
+            const impl = (t.specification as any).technicalImplementation;
+            return impl && Object.keys(impl).length > 0;
+          });
+
+          if (implResult.raw && !hadImpl) {
+            implParseFailed = true;
+            // set a helpful skipped reason so metadata explains the failure
+            implSkippedReason = 'implementation_enrichment_parsing_failed';
+          }
         } catch (err) {
           console.warn('Task implementation enrichment failed, continuing with modified tasks', err);
           implSkippedReason = 'implementation_enrichment_failed';
@@ -338,8 +351,8 @@ export async function generateTasksWithArchitecture(
         ...(extractionRaw ? { architectureExtractionRaw: extractionRaw } : {}),
         ...(implSkippedReason ? { architectureExtractionSkipped: implSkippedReason } : {}),
         ...(implementationRaw ? { architectureImplementationRaw: implementationRaw } : {}),
-        ...(implSkippedReason ? { architectureImplementationSkipped: implSkippedReason } : {}),
-        architectureImplementationStatus: anyEnriched ? 'enriched' : (implSkippedReason ? 'skipped' : 'not_enriched'),
+        ...(implParseFailed ? { architectureImplementationSkipped: implSkippedReason, architectureImplementationFailed: true } : {}),
+        architectureImplementationStatus: anyEnriched ? 'enriched' : (implSkippedReason ? (implParseFailed ? 'failed' : 'skipped') : 'not_enriched'),
       },
     };
 
@@ -514,6 +527,55 @@ async function enrichTasksWithImplementation(
       return null;
     };
 
+    // Try to repair slightly truncated/malformed JSON
+    const tryRepairJson = (text: string): string | null => {
+      if (!text) return null;
+      let t = String(text).trim();
+
+      // Remove surrounding code fences if present
+      if (t.startsWith('```')) {
+        const match = t.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (match) t = match[1].trim();
+        else t = t.replace(/^```[\s\S]*/m, '').trim();
+      }
+
+      // Remove trailing commas before closers
+      t = t.replace(/,\s*([}\]])/g, '$1');
+
+      const ob = (t.match(/{/g) || []).length;
+      const cb = (t.match(/}/g) || []).length;
+      const obk = (t.match(/\[/g) || []).length;
+      const cbk = (t.match(/\]/g) || []).length;
+
+      let repaired = t;
+      if (ob > cb) repaired += '}'.repeat(ob - cb);
+      if (obk > cbk) repaired += ']'.repeat(obk - cbk);
+
+      // Final cleanup
+      repaired = repaired.replace(/,\s*([}\]])/g, '$1');
+
+      try {
+        JSON.parse(repaired);
+        return repaired;
+      } catch (err) {
+        // try trimming last line and closing braces
+        const lastNl = repaired.lastIndexOf('\n');
+        if (lastNl > 0) {
+          const truncated = repaired.slice(0, lastNl);
+          const tOb = (truncated.match(/{/g) || []).length;
+          const tCb = (truncated.match(/}/g) || []).length;
+          const finalTry = truncated + '}'.repeat(Math.max(0, tOb - tCb));
+          try {
+            JSON.parse(finalTry);
+            return finalTry;
+          } catch (err2) {
+            return null;
+          }
+        }
+        return null;
+      }
+    };
+
     let parsed: any = tryParseJson(jsonContent);
 
     if (!parsed) {
@@ -535,9 +597,31 @@ async function enrichTasksWithImplementation(
       }
     }
 
+    // Try a repair pass if still not parsed
+    let didRepair = false;
     if (!parsed) {
+      const repaired = tryRepairJson(jsonContent);
+      if (repaired) {
+        const p2 = tryParseJson(repaired);
+        if (p2) {
+          parsed = p2;
+          didRepair = true;
+          console.info('Repaired truncated implementation JSON and parsed successfully');
+        } else {
+          console.warn('Repair attempted but parsing still failed');
+        }
+      }
+    }
+
+    if (!parsed) {
+      const len = (responseContent || '').length || 0;
       console.warn('Failed to parse task implementation JSON. Raw (truncated):', (responseContent || '').slice(0, 1000));
+      console.warn(`Parser diagnostics: response length=${len}, trimmedPreview="${String((responseContent || '').slice(0,200)).replace(/\n/g,'\\n')}"`);
+      // Also output the full raw to debug console.debug (may be collapsed by browser)
+      console.debug('Full raw implementation response:', responseContent);
       return { tasks, raw: responseContent };
+    } else if (didRepair) {
+      console.debug('Implementation JSON required repair before parsing');
     }
 
     // Robust extraction of implementations array

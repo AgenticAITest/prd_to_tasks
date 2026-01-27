@@ -5,6 +5,8 @@ import { useTaskStore } from '@/store/taskStore';
 import { generateTasksWithArchitecture, generateTasks } from '@/core/task-generator';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { useSettingsStore } from '@/store/settingsStore';
+import { updateLLMRouter } from '@/core/llm/LLMRouter';
 
 export function ArchitecturePreviewModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const modalData = useUIStore((s) => s.modalData);
@@ -13,10 +15,20 @@ export function ArchitecturePreviewModal({ open, onClose }: { open: boolean; onC
 
   const recommendations = (modalData?.recommendations as any[]) || [];
   const context = modalData?.context;
+  const metadata = (modalData?.metadata as any) || {};
 
   const handleApply = async () => {
     if (!context) return;
     setIsApplying(true);
+
+    // Ensure LLM router is initialized with settings before applying
+    const settings = useSettingsStore.getState();
+    try {
+      updateLLMRouter({ apiKeys: settings.apiKeys, modelSelection: settings.modelSelection });
+    } catch (err) {
+      console.warn('Failed to initialize LLM router before apply:', err);
+    }
+
     try {
       const taskSet = await generateTasksWithArchitecture(context as any, undefined, undefined, false);
       setTaskSet(taskSet as any);
@@ -64,7 +76,40 @@ export function ArchitecturePreviewModal({ open, onClose }: { open: boolean; onC
 
         <div className="p-4 space-y-4">
           {recommendations.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No recommendations to preview.</div>
+            <div className="space-y-2">
+              <div className="text-sm text-muted-foreground">No recommendations to preview.</div>
+
+              {/* If extraction was skipped, show the reason and guidance */}
+              {metadata?.architectureExtractionSkipped ? (
+                <div className="text-sm text-muted-foreground">
+                  Extraction skipped: <strong>{metadata.architectureExtractionSkipped}</strong>.
+                  {metadata.architectureExtractionSkipped === 'no_api_key' ? (
+                    <div className="text-xs text-muted-foreground mt-1">No LLM API key configured. Add an API key in Settings → API Keys to enable architecture extraction.</div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {/* If raw extraction output exists, show it for debugging */}
+              {metadata?.architectureExtractionRaw ? (
+                <div className="mt-2">
+                  <div className="text-xs font-medium">Raw extraction output (truncated):</div>
+                  <pre className="text-xs mt-1 bg-surface p-2 rounded max-h-40 overflow-auto">{String(metadata.architectureExtractionRaw).slice(0, 2000)}</pre>
+                </div>
+              ) : null}
+
+              {/* If implementation enrichment failed or produced raw output, show it */}
+              {metadata?.architectureImplementationRaw || metadata?.architectureImplementationFailed ? (
+                <div className="mt-2">
+                  <div className="text-xs font-medium">Implementation enrichment diagnostics:</div>
+                  {metadata?.architectureImplementationFailed ? (
+                    <div className="text-xs text-destructive">Enrichment failed: {String(metadata?.architectureImplementationSkipped || 'unknown reason')}</div>
+                  ) : null}
+                  {metadata?.architectureImplementationRaw ? (
+                    <pre className="text-xs mt-1 bg-surface p-2 rounded max-h-40 overflow-auto">{String(metadata.architectureImplementationRaw).slice(0, 2000)}</pre>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           ) : (
             recommendations.map((r, idx) => (
               <div key={idx} className="p-3 border rounded">

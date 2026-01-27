@@ -157,12 +157,12 @@ export function useProject() {
             projectStore.setPhaseDirect(3);
           }
 
-          if (hasDBML) {
+          // if (hasDBML) {
             // Debug: notify about restored ERD state
-            const dbmlLen = useERDStore.getState().dbml?.length ?? 0;
-            const restoredVal = useERDStore.getState().validationResult;
-            toast.info(`ERD restored — dbml ${dbmlLen} chars, valid: ${restoredVal?.isValid === true ? 'yes' : restoredVal?.isValid === false ? 'no' : 'unknown'}`);
-          }
+            //const dbmlLen = useERDStore.getState().dbml?.length ?? 0;
+            //const restoredVal = useERDStore.getState().validationResult;
+            //toast.info(`ERD restored — dbml ${dbmlLen} chars, valid: ${restoredVal?.isValid === true ? 'yes' : restoredVal?.isValid === false ? 'no' : 'unknown'}`);
+          // }
         } else if (!projectData.erdSchema && projectData.entities && projectData.entities.length > 0) {
           // No saved ERD schema object exists — attempt to regenerate DBML/SQL/validation from entities and persist it
           try {

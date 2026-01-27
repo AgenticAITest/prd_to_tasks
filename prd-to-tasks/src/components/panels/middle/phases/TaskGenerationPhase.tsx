@@ -20,6 +20,7 @@ import { usePRDStore } from '@/store/prdStore';
 import { useEntityStore } from '@/store/entityStore';
 import { useERDStore } from '@/store/erdStore';
 import { generateTasks, generateTasksWithArchitecture } from '@/core/task-generator';
+import { updateLLMRouter } from '@/core/llm/LLMRouter';
 import { useProject } from '@/hooks/useProject';
 import { toast } from 'sonner';
 import { useSettingsStore } from '@/store/settingsStore';
@@ -141,13 +142,29 @@ export function TaskGenerationPhase() {
       // Respect preview setting in advanced settings
       const settings = useSettingsStore.getState();
       if (settings.advanced.previewArchitectureRecommendations && attached && attached.content) {
-        // Request preview only
-        const previewSet = await generateTasksWithArchitecture(context as any, undefined, undefined, true);
+        // Ensure router is initialized with current settings before attempting extraction
+        try {
+          updateLLMRouter({ apiKeys: settings.apiKeys, modelSelection: settings.modelSelection });
+        } catch (err) {
+          console.warn('Failed to initialize LLM router for preview:', err);
+        }
 
-        // Open preview modal with recommendations
+        // Request preview only
+        let previewSet;
+        try {
+          previewSet = await generateTasksWithArchitecture(context as any, undefined, undefined, true);
+        } catch (err) {
+          console.error('Preview extraction failed:', err);
+          toast.error('Architecture preview failed. Check console for details.');
+          setGenerating(false);
+          return;
+        }
+
+        // Open preview modal with recommendations and metadata for diagnostics
         useUIStore.getState().openModal('preview-architecture', {
           recommendations: previewSet.metadata?.architectureRecommendations || [],
           context,
+          metadata: previewSet.metadata || {},
         });
 
         setGenerating(false);
@@ -155,7 +172,22 @@ export function TaskGenerationPhase() {
       }
 
       // Otherwise apply directly
-      const taskSet = await generateTasksWithArchitecture(context as any, undefined);
+      // Ensure LLM router is initialized (may be required for extraction/enrichment)
+      try {
+        updateLLMRouter({ apiKeys: settings.apiKeys, modelSelection: settings.modelSelection });
+      } catch (err) {
+        console.warn('Failed to initialize LLM router before extraction:', err);
+      }
+
+      let taskSet;
+      try {
+        taskSet = await generateTasksWithArchitecture(context as any, undefined);
+      } catch (err) {
+        console.error('Task generation with architecture failed:', err);
+        // Fallback to synchronous generator so user still gets tasks
+        toast.error('Task generation with architecture failed; falling back to basic generator');
+        taskSet = generateTasks(context as any);
+      }
 
       // Finish progress
       setGenerating(true, 100);
