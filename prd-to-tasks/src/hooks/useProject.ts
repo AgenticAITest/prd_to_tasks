@@ -7,6 +7,7 @@ import { useTaskStore } from '@/store/taskStore';
 import { saveProject, loadProject, deleteProject, addRecentProject } from '@/db';
 import type { ProjectFile } from '@/types/prd';
 import type { DBProject } from '@/db/database';
+import { generateId } from '@/lib/utils';
 
 export function useProject() {
   const projectStore = useProjectStore();
@@ -17,7 +18,7 @@ export function useProject() {
   const [isLoading, setIsLoading] = useState(false);
 
   const createNewProject = useCallback(
-    async (name: string) => {
+    async (name: string, description?: string) => {
       setIsLoading(true);
       try {
         // Reset all stores
@@ -27,14 +28,27 @@ export function useProject() {
         taskStore.clearTasks();
 
         // Create new project
-        projectStore.createProject(name);
+        projectStore.createProject(name, description);
 
-        // Save to database
-        const project = projectStore.project;
+        // Ensure the generated project id doesn't collide with an existing DB project
+        // Use live getter to read current state (not the snapshot on hook initialization)
+        let project = useProjectStore.getState().project;
+        if (!project) throw new Error('Failed to create project');
+
+        const existing = await loadProject(project.id);
+        if (existing) {
+          // Regenerate id and update in-store project to avoid overwriting existing project
+          const newId = generateId();
+          projectStore.updateProject({ id: newId });
+          project = useProjectStore.getState().project!;
+        }
+
+        // Save to database for the newly created project
         if (project) {
           const projectData: DBProject = {
             projectId: project.id,
             name,
+            description: project.description,
             createdAt: new Date(),
             updatedAt: new Date(),
             files: [],
@@ -74,7 +88,10 @@ export function useProject() {
 
         // Restore PRD if exists
         if (projectData.prd) {
-          prdStore.setPRD(projectData.prd);
+          prdStore.setPRD(projectData.prd, false);
+          if ((projectData.prd as any).analysisResults) {
+            prdStore.setAnalysisResult((projectData.prd as any).analysisResults, false);
+          }
         }
 
         // Restore entities
@@ -98,10 +115,22 @@ export function useProject() {
           taskStore.setTaskSet(projectData.taskSet);
         }
 
-        // Update recent projects
+        // Restore semantic analysis result if present
+        if (projectData.semanticAnalysisResult) {
+          prdStore.setSemanticAnalysisResult(projectData.semanticAnalysisResult, false);
+        }
+
+        // Update recent projects in DB
         await addRecentProject(projectData.projectId, projectData.name);
 
-        return projectData;
+        // Also update in-memory recent list so UI reflects changes immediately
+        projectStore.addRecentProject({
+          id: projectData.projectId,
+          name: projectData.name,
+          createdAt: projectData.createdAt || new Date(),
+          updatedAt: projectData.updatedAt || new Date(),
+        });
+        return projectData; 
       } catch (error) {
         console.error('Failed to load project:', error);
         throw error;
@@ -131,6 +160,7 @@ export function useProject() {
         relationships: entityStore.relationships,
         erdSchema: erdStore.schema || undefined,
         taskSet: taskStore.taskSet || undefined,
+        semanticAnalysisResult: prdStore.semanticAnalysisResult || undefined,
       };
 
       await saveProject(projectData);

@@ -7,6 +7,7 @@ export type ModalType =
   | 'export'
   | 'confirmation'
   | 'new-project'
+  | 'open-project'
   | 'entity-edit'
   | 'field-edit'
   | 'relationship-edit'

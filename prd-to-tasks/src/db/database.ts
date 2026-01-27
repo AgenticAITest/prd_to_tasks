@@ -17,6 +17,7 @@ export interface DBProject {
   relationships?: Relationship[];
   erdSchema?: ERDSchema;
   taskSet?: TaskSet;
+  semanticAnalysisResult?: import('@/types/analysis').SemanticAnalysisResult;
   files?: ProjectFile[];
 }
 

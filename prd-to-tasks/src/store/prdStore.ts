@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useProjectStore } from '@/store/projectStore';
 import type {
   StructuredPRD,
   FunctionalRequirement,
@@ -100,16 +101,19 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
     set({ rawContent: content });
   },
 
-  setPRD: (prd: StructuredPRD) => {
+  setPRD: (prd: StructuredPRD, markDirty: boolean = true) => {
     set({ prd, error: null });
+    if (markDirty) useProjectStore.getState().setDirty(true);
   },
 
-  setAnalysisResult: (result: AnalysisResult) => {
-    set({
+  setAnalysisResult: (result: AnalysisResult, markDirty: boolean = true) => {
+    set(state => ({
       analysisResult: result,
       blockingIssues: result.blockingIssues,
       warnings: result.warnings,
-    });
+      prd: state.prd ? { ...state.prd, analysisResults: result, updatedAt: new Date() } : state.prd,
+    }));
+    if (markDirty) useProjectStore.getState().setDirty(true);
   },
 
   clearPRD: () => {
@@ -140,6 +144,7 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
         },
       };
     });
+    useProjectStore.getState().setDirty(true);
   },
 
   addFR: (fr: Omit<FunctionalRequirement, 'id'>) => {
@@ -158,6 +163,7 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
         },
       };
     });
+    useProjectStore.getState().setDirty(true);
   },
 
   removeFR: (frId: string) => {
@@ -171,6 +177,7 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
         },
       };
     });
+    useProjectStore.getState().setDirty(true);
   },
 
   // BR management
@@ -190,6 +197,7 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
         },
       };
     });
+    useProjectStore.getState().setDirty(true);
   },
 
   addBR: (br: Omit<BusinessRule, 'id'>, frId: string) => {
@@ -216,6 +224,7 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
         },
       };
     });
+    useProjectStore.getState().setDirty(true);
   },
 
   removeBR: (brId: string) => {
@@ -251,6 +260,7 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
         },
       };
     });
+    useProjectStore.getState().setDirty(true);
   },
 
   addScreen: (screen: Omit<Screen, 'id'>, frId: string) => {
@@ -274,6 +284,7 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
         },
       };
     });
+    useProjectStore.getState().setDirty(true);
   },
 
   removeScreen: (screenId: string) => {
@@ -290,6 +301,7 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
         },
       };
     });
+    useProjectStore.getState().setDirty(true);
   },
 
   // User role management
@@ -324,6 +336,7 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
         },
       };
     });
+    useProjectStore.getState().setDirty(true);
   },
 
   removeUserRole: (roleId: string) => {
@@ -337,6 +350,7 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
         },
       };
     });
+    useProjectStore.getState().setDirty(true);
   },
 
   // Processing state management
@@ -365,8 +379,9 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
     });
   },
 
-  setSemanticAnalysisResult: (result: SemanticAnalysisResult) => {
+  setSemanticAnalysisResult: (result: SemanticAnalysisResult, markDirty: boolean = true) => {
     set({ semanticAnalysisResult: result });
+    if (markDirty) useProjectStore.getState().setDirty(true);
   },
 
   clearSemanticAnalysis: () => {

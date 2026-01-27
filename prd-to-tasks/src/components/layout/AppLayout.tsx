@@ -10,9 +10,13 @@ import { FirstTimeSetupModal } from '@/components/modals/FirstTimeSetupModal';
 import { ExportModal } from '@/components/modals/ExportModal';
 import { ConfirmationModal } from '@/components/modals/ConfirmationModal';
 import { ArchitecturePreviewModal } from '@/components/modals/ArchitecturePreviewModal';
+import { NewProjectModal } from '@/components/modals/NewProjectModal';
+import { OpenProjectModal } from '@/components/modals/OpenProjectModal';
 import { useSettingsStore } from '@/store/settingsStore';
 import { useUIStore } from '@/store/uiStore';
 import { hasEnvApiKeys } from '@/lib/env-config';
+import { getRecentProjects } from '@/db';
+import { useProjectStore } from '@/store/projectStore';
 
 export function AppLayout() {
   const hasValidApiKey = useSettingsStore((s) => s.hasValidApiKey());
@@ -40,6 +44,36 @@ export function AppLayout() {
       useUIStore.getState().openModal('first-time-setup');
     }
   }, [envInitialized, hasValidApiKey]);
+
+  // Listen for global open command (Ctrl+O)
+  useEffect(() => {
+    const handleOpen = () => {
+      useUIStore.getState().openModal('new-project');
+    };
+
+    document.addEventListener('app:open', handleOpen);
+    return () => document.removeEventListener('app:open', handleOpen);
+  }, []);
+
+  // Load recent projects from IndexedDB on startup so the header menu preserves them across refresh
+  useEffect(() => {
+    let canceled = false;
+
+    const loadRecent = async () => {
+      try {
+        const recent = await getRecentProjects();
+        if (canceled) return;
+        // Map DB shape to project store shape
+        const mapped = recent.map(r => ({ id: r.projectId, name: r.name, accessedAt: r.accessedAt }));
+        useProjectStore.getState().setRecentProjects(mapped);
+      } catch (err) {
+        console.error('Failed to load recent projects:', err);
+      }
+    };
+
+    loadRecent();
+    return () => { canceled = true; };
+  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -70,6 +104,16 @@ export function AppLayout() {
 
       <ArchitecturePreviewModal
         open={activeModal === 'preview-architecture'}
+        onClose={() => useUIStore.getState().closeModal()}
+      />
+
+      <NewProjectModal
+        open={activeModal === 'new-project'}
+        onClose={() => useUIStore.getState().closeModal()}
+      />
+
+      <OpenProjectModal
+        open={activeModal === 'open-project'}
         onClose={() => useUIStore.getState().closeModal()}
       />
 

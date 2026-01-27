@@ -3,42 +3,34 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useProjectStore } from '@/store/projectStore';
 import { useUIStore } from '@/store/uiStore';
-import { saveProject } from '@/db';
 import { toast } from 'sonner';
+import { useProject } from '@/hooks/useProject';
 
 interface ProjectActionsProps {
   collapsed?: boolean;
 }
 
 export function ProjectActions({ collapsed = false }: ProjectActionsProps) {
-  const { project, files, isDirty, setDirty, createProject } = useProjectStore();
+  const { project, files, isDirty, setDirty } = useProjectStore();
   const { openModal } = useUIStore();
+  const { saveCurrentProject } = useProject();
 
   const handleSave = async () => {
     if (!project) return;
 
     try {
-      await saveProject({
-        projectId: project.id,
-        name: project.name,
-        description: project.description,
-        createdAt: project.createdAt,
-        updatedAt: new Date(),
-        files,
-      });
+      await saveCurrentProject();
+      // saveCurrentProject sets dirty flag itself via projectStore
       setDirty(false);
       toast.success('Project saved');
     } catch (error) {
+      console.error('Failed to save project', error);
       toast.error('Failed to save project');
     }
   };
 
   const handleNewProject = () => {
-    const name = prompt('Enter project name:');
-    if (name) {
-      createProject(name);
-      toast.success('Project created');
-    }
+    openModal('new-project');
   };
 
   const handleExport = () => {
@@ -69,7 +61,7 @@ export function ProjectActions({ collapsed = false }: ProjectActionsProps) {
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                onClick={() => openModal('new-project')}
+                onClick={() => openModal('open-project')}
               >
                 <FolderOpen className="h-4 w-4" />
               </Button>
@@ -126,7 +118,7 @@ export function ProjectActions({ collapsed = false }: ProjectActionsProps) {
         variant="outline"
         size="sm"
         className="flex-1 min-w-[80px]"
-        onClick={() => openModal('new-project')}
+        onClick={() => openModal('open-project')}
       >
         <FolderOpen className="h-4 w-4 mr-1" />
         Open

@@ -9,6 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { usePRDStore } from '@/store/prdStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useSettingsStore } from '@/store/settingsStore';
+import { useProject } from '@/hooks/useProject';
 import { parsePRDMarkdown } from '@/core/prd-parser';
 import { analyzePRD } from '@/core/analyzer';
 import { analyzeSemantics } from '@/core/analyzer/semantic-analyzer';
@@ -29,8 +30,9 @@ export function PRDAnalysisPhase() {
     semanticAnalysisResult,
     canProceedToEntities,
   } = usePRDStore();
-  const { files, setPhaseStatus, advancePhase } = useProjectStore();
+  const { files, setPhaseStatus, advancePhase, project, setDirty } = useProjectStore();
   const { apiKeys, modelSelection } = useSettingsStore();
+  const { saveCurrentProject } = useProject();
 
   const prdFiles = files.filter((f) => f.type === 'prd');
   const isProcessing = isParsing || isAnalyzing || isSemanticAnalyzing;
@@ -92,6 +94,9 @@ export function PRDAnalysisPhase() {
       // Store the results
       usePRDStore.getState().setPRD(parseResult.prd);
       usePRDStore.getState().setAnalysisResult(analysisResult);
+
+      // Mark project as dirty so Save is enabled and autosave will run
+      if (project) setDirty(true);
 
       // Check for blocking issues
       if (analysisResult.blockingIssues.length > 0) {
@@ -163,6 +168,9 @@ export function PRDAnalysisPhase() {
 
       // Store the result
       usePRDStore.getState().setSemanticAnalysisResult(semanticResult);
+
+      // Mark project as dirty so Save is enabled and autosave will run
+      if (project) setDirty(true);
 
       // Update phase status based on semantic analysis
       if (semanticResult.overallAssessment.canProceed) {
@@ -256,6 +264,23 @@ export function PRDAnalysisPhase() {
               Proceed to Entities
             </Button>
           )}
+
+          {/* Save result button (main panel) */}
+          <Button
+            onClick={async () => {
+              try {
+                await saveCurrentProject();
+                toast.success('Analysis results saved');
+              } catch (err) {
+                console.error('Failed to save project:', err);
+                toast.error('Failed to save analysis results');
+              }
+            }}
+            variant="outline"
+            disabled={!project}
+          >
+            Save
+          </Button>
         </div>
       </div>
 

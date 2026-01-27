@@ -13,18 +13,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useProjectStore } from '@/store/projectStore';
 import { useUIStore } from '@/store/uiStore';
+import { useProject } from '@/hooks/useProject';
 
 export function Header() {
   const project = useProjectStore((s) => s.project);
   const recentProjects = useProjectStore((s) => s.recentProjects);
-  const createProject = useProjectStore((s) => s.createProject);
   const openModal = useUIStore((s) => s.openModal);
+  const { loadExistingProject } = useProject();
 
   const handleNewProject = () => {
-    const name = prompt('Enter project name:');
-    if (name) {
-      createProject(name);
-    }
+    openModal('new-project');
   };
 
   return (
@@ -51,7 +49,7 @@ export function Header() {
               <Plus className="h-4 w-4 mr-2" />
               New Project
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => openModal('new-project')}>
+            <DropdownMenuItem onClick={() => openModal('open-project')}>
               <FolderOpen className="h-4 w-4 mr-2" />
               Open Project
             </DropdownMenuItem>
@@ -64,7 +62,7 @@ export function Header() {
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     {recentProjects.map((recent) => (
-                      <DropdownMenuItem key={recent.id}>
+                      <DropdownMenuItem key={recent.id} onClick={() => loadExistingProject(recent.id)}>
                         {recent.name}
                       </DropdownMenuItem>
                     ))}

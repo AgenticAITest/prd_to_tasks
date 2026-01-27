@@ -16,7 +16,16 @@ export function formatDate(date: Date): string {
 }
 
 export function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  // Use secure UUID when available to avoid accidental collisions when creating projects quickly
+  if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
+    try {
+      return (crypto as any).randomUUID();
+    } catch {
+      // fallthrough to fallback
+    }
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
 export function truncate(str: string, length: number): string {

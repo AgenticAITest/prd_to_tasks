@@ -264,4 +264,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       return { recentProjects: newRecent };
     });
   },
+
+  // Replace recent projects (e.g., load from DB)
+  setRecentProjects: (recent: { id: string; name: string; accessedAt: Date }[]) => {
+    set({ recentProjects: recent.slice(0, 10) });
+  },
 }));

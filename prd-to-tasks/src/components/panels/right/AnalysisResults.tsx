@@ -1,8 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 import { usePRDStore } from '@/store/prdStore';
 import { useEntityStore } from '@/store/entityStore';
+import { useProjectStore } from '@/store/projectStore';
+import { useProject } from '@/hooks/useProject';
 import {
   CheckCircle2,
   XCircle,
@@ -13,10 +16,13 @@ import {
   Layers,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export function AnalysisResults() {
   const { prd, semanticAnalysisResult, analysisResult } = usePRDStore();
   const { entities } = useEntityStore();
+  const { project } = useProjectStore();
+  const { saveCurrentProject } = useProject();
 
   if (!prd) {
     return (
@@ -42,6 +48,28 @@ export function AnalysisResults() {
 
   return (
     <div className="space-y-4">
+      {/* Top controls: Save analysis results */}
+      {prd && (
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              try {
+                await saveCurrentProject();
+                toast.success('Analysis results saved');
+              } catch (err) {
+                console.error('Failed to save analysis results:', err);
+                toast.error('Failed to save analysis results');
+              }
+            }}
+            disabled={!project}
+          >
+            Save Analysis
+          </Button>
+        </div>
+      )}
+
       {/* Semantic Analysis Gaps - Only show if semantic analysis exists */}
       {semanticAnalysisResult && (
         <>
