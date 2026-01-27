@@ -120,7 +120,7 @@ export function generateTasks(
   let resolvedTasks = resolveDependencies(tasks);
 
   // Ensure every task has a technicalImplementation object (may be empty)
-  resolvedTasks = resolvedTasks.map((t) => ({
+  resolvedTasks = resolvedTasks.map((t: ProgrammableTask) => ({
     ...t,
     specification: {
       ...t.specification,
@@ -444,7 +444,7 @@ function parseArchitectureExtractionResponse(content: string): { recommendations
   // Strip code fences
   if (jsonContent.startsWith('```')) {
     const match = jsonContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (match) jsonContent = match[1].trim();
+    if (match && match[1]) jsonContent = (match[1] || '').trim();
   }
 
   try {
@@ -472,7 +472,8 @@ async function enrichTasksWithImplementation(
   tasks: ProgrammableTask[],
   context: TaskGenerationContext,
   signal?: AbortSignal,
-  callbacks?: { onEnrichmentProgress?: (completed: number, total: number, currentTaskId?: string) => void }
+  callbacks?: { onEnrichmentProgress?: (completed: number, total: number, currentTaskId?: string) => void },
+  concurrency: number = 1
 ): Promise<{ tasks: ProgrammableTask[]; raw?: string; failures?: { taskId: string; error: string }[] }> {
   if (!context.architectureGuide || !context.architectureGuide.content) return { tasks };
 
@@ -495,201 +496,172 @@ async function enrichTasksWithImplementation(
       return { tasks, raw: undefined, failures: [] };
     }
 
-    // Process tasks sequentially to avoid large single responses and to be robust to truncation
+    // Process tasks using a concurrency-limited worker pool
     const updatedTasks: ProgrammableTask[] = tasks.map((t) => ({ ...t }));
-
     const total = updatedTasks.length;
-    for (let i = 0; i < updatedTasks.length; i++) {
-      const t = updatedTasks[i];
-      if (signal?.aborted) break;
+    let cursor = 0;
+    let completed = 0;
 
-      // Minimal per-task summary
-      const taskSummary = `${t.id}: ${t.title}\nRequirements:\n- ${t.specification.requirements.join('\n- ')}`;
-      const userPrompt = buildTaskImplementationPrompt(taskSummary, prdSummary, context.architectureGuide.content || '');
+    const worker = async () => {
+      while (true) {
+        if (signal?.aborted) break;
+        const idx = cursor++;
+        if (idx >= updatedTasks.length) break;
+        const t = updatedTasks[idx];
 
-      let responseContent: string | undefined;
-      try {
-        // Use a smaller token limit for per-task calls
-        const response = await router.callWithRetry('T3', systemPrompt, userPrompt, 2048, 2, signal);
-        responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
-      } catch (err: any) {
-        console.warn(`Per-task enrichment failed for ${t.id}:`, err?.message || err);
-        aggregatedRaw[t.id] = { error: String(err?.message || err) };
-        failures.push({ taskId: t.id, error: String(err?.message || err) });
-        // report progress for the failed task
-        callbacks?.onEnrichmentProgress?.(i + 1, total, t.id);
-        continue;
-      }
+        // Minimal per-task summary
+        const taskSummary = `${t.id}: ${t.title}\nRequirements:\n- ${t.specification.requirements.join('\n- ')}`;
+        const userPrompt = buildTaskImplementationPrompt(taskSummary, prdSummary, context.architectureGuide?.content || '');
 
-      // Strip fences and try to parse / repair
-      let jsonContent = (responseContent || '').trim();
-      if (jsonContent.startsWith('```')) {
-        const match = jsonContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (match) jsonContent = match[1].trim();
-      }
-
-      const tryParseJson = (text: string): any | null => {
+        let responseContent: string | undefined;
         try {
-          return JSON.parse(text);
-        } catch (err) {
-          return null;
+          const response = await router.callWithRetry('T3', systemPrompt, userPrompt, 2048, 2, signal);
+          responseContent = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+        } catch (err: any) {
+          console.warn(`Per-task enrichment failed for ${t.id}:`, err?.message || err);
+          aggregatedRaw[t.id] = { error: String(err?.message || err) };
+          failures.push({ taskId: t.id, error: String(err?.message || err) });
+          completed++;
+          callbacks?.onEnrichmentProgress?.(completed, total, t.id);
+          continue;
         }
-      };
 
-      const extractBalancedJson = (text: string): string | null => {
-        const startIdx = Math.min(
-          ...['{', '[']
-            .map((ch) => text.indexOf(ch))
-            .filter((i) => i >= 0)
-        );
-        if (isFinite(startIdx)) {
-          const open = text[startIdx];
-          const close = open === '{' ? '}' : ']';
-          let depth = 0;
-          for (let i = startIdx; i < text.length; i++) {
-            const c = text[i];
-            if (c === open) depth++;
-            else if (c === close) depth--;
-            if (depth === 0) return text.slice(startIdx, i + 1);
-          }
+        // Strip fences and attempt parse/repair (same logic as before)
+        let jsonContent = (responseContent || '').trim();
+        if (jsonContent.startsWith('```')) {
+          const match = jsonContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+          if (match) jsonContent = match[1].trim();
         }
-        return null;
-      };
 
-      const tryRepairJson = (text: string): string | null => {
-        if (!text) return null;
-        let ttx = String(text).trim();
-        if (ttx.startsWith('```')) {
-          const match = ttx.match(/```(?:json)?\s*([\s\S]*?)```/);
-          if (match) ttx = match[1].trim();
-          else ttx = ttx.replace(/^```[\s\S]*/m, '').trim();
-        }
-        ttx = ttx.replace(/,\s*([}\]])/g, '$1');
-        const ob = (ttx.match(/{/g) || []).length;
-        const cb = (ttx.match(/}/g) || []).length;
-        const obk = (ttx.match(/\[/g) || []).length;
-        const cbk = (ttx.match(/\]/g) || []).length;
-        let repaired = ttx;
-        if (ob > cb) repaired += '}'.repeat(ob - cb);
-        if (obk > cbk) repaired += ']'.repeat(obk - cbk);
-        repaired = repaired.replace(/,\s*([}\]])/g, '$1');
-        try {
-          JSON.parse(repaired);
-          return repaired;
-        } catch (err) {
-          const lastNl = repaired.lastIndexOf('\n');
-          if (lastNl > 0) {
-            const truncated = repaired.slice(0, lastNl);
-            const tOb = (truncated.match(/{/g) || []).length;
-            const tCb = (truncated.match(/}/g) || []).length;
-            const finalTry = truncated + '}'.repeat(Math.max(0, tOb - tCb));
-            try {
-              JSON.parse(finalTry);
-              return finalTry;
-            } catch (err2) {
-              return null;
+        const tryParseJson = (text: string | null): any | null => {
+          if (!text) return null;
+          try { return JSON.parse(text); } catch { return null; }
+        };
+
+        const extractBalancedJson = (text: string): string | null => {
+          const startIdx = Math.min(...['{','['].map((ch) => text.indexOf(ch)).filter((i) => i >= 0));
+          if (isFinite(startIdx)) {
+            const open = text[startIdx]; const close = open === '{' ? '}' : ']';
+            let depth = 0;
+            for (let i = startIdx; i < text.length; i++) {
+              const c = text[i]; if (c === open) depth++; else if (c === close) depth--; if (depth === 0) return text.slice(startIdx, i+1);
             }
           }
           return null;
-        }
-      };
+        };
 
-      let parsed: any = tryParseJson(jsonContent);
-      if (!parsed) {
-        const candidate = extractBalancedJson(jsonContent);
-        if (candidate) parsed = tryParseJson(candidate);
-      }
-      if (!parsed) {
-        let attempt = jsonContent;
-        while (attempt.length > 20) {
-          attempt = attempt.slice(0, -1);
-          const p = tryParseJson(attempt);
-          if (p) {
-            parsed = p;
-            break;
+        const tryRepairJson = (text: string): string | null => {
+          if (!text) return null;
+          let ttx = String(text).trim();
+          if (ttx.startsWith('```')) {
+            const match = ttx.match(/```(?:json)?\s*([\s\S]*?)```/);
+            if (match && match[1]) {
+              ttx = (match[1] || '').trim();
+            } else {
+              ttx = ttx.replace(/^```[\s\S]*/m, '').trim();
+            }
           }
-        }
-      }
-      if (!parsed) {
-        const repaired = tryRepairJson(jsonContent);
-        if (repaired) {
-          const p2 = tryParseJson(repaired);
-          if (p2) {
-            parsed = p2;
-            console.info(`Repaired truncated implementation JSON for task ${t.id}`);
+
+          ttx = ttx.replace(/,\s*([}\]])/g, '$1');
+          const ob = (ttx.match(/{/g) || []).length;
+          const cb = (ttx.match(/}/g) || []).length;
+          const obk = (ttx.match(/\[/g) || []).length;
+          const cbk = (ttx.match(/\]/g) || []).length;
+
+          let repaired = ttx;
+          if (ob > cb) repaired += '}'.repeat(ob - cb);
+          if (obk > cbk) repaired += ']'.repeat(obk - cbk);
+          repaired = repaired.replace(/,\s*([}\]])/g, '$1');
+
+          try {
+            JSON.parse(repaired);
+            return repaired;
+          } catch {
+            const lastNl = repaired.lastIndexOf('\n');
+            if (lastNl > 0) {
+              const truncated = repaired.slice(0, lastNl);
+              const tOb = (truncated.match(/{/g) || []).length;
+              const tCb = (truncated.match(/}/g) || []).length;
+              const finalTry = truncated + '}'.repeat(Math.max(0, tOb - tCb));
+              try {
+                JSON.parse(finalTry);
+                return finalTry;
+              } catch {
+                return null;
+              }
+            }
+            return null;
           }
-        }
+        };
+
+        let parsed: any = tryParseJson(jsonContent);
+        if (!parsed) { const candidate = extractBalancedJson(jsonContent); if (candidate) parsed = tryParseJson(candidate); }
+        if (!parsed) { let attempt = jsonContent; while (attempt.length>20) { attempt = attempt.slice(0,-1); const p = tryParseJson(attempt); if (p) { parsed = p; break; } } }
+        if (!parsed) { const repaired = tryRepairJson(jsonContent); if (repaired) { const p2 = tryParseJson(repaired); if (p2) { parsed = p2; console.info(`Repaired truncated implementation JSON for task ${t.id}`); } } }
+
+        if (!parsed) { console.warn(`Per-task implementation parsing failed for ${t.id}. Truncated preview:\n${String(responseContent||'').slice(0,400)}`); aggregatedRaw[t.id] = { raw: responseContent }; failures.push({ taskId: t.id, error: 'parsing_failed' }); completed++; callbacks?.onEnrichmentProgress?.(completed, total, t.id); continue; }
+
+        let implObj: any = null;
+        if (parsed.technicalImplementation) implObj = parsed.technicalImplementation;
+        else if (Array.isArray(parsed.implementations) && parsed.implementations.length>0) implObj = parsed.implementations[0].technicalImplementation || parsed.implementations[0];
+        else if (parsed.impl || parsed.implementation) implObj = parsed.impl || parsed.implementation;
+        else if (typeof parsed === 'object') implObj = parsed;
+
+        if (!implObj || Object.keys(implObj).length===0) { aggregatedRaw[t.id] = { raw: responseContent }; failures.push({ taskId: t.id, error: 'no_implementation_found' }); completed++; callbacks?.onEnrichmentProgress?.(completed, total, t.id); continue; }
+
+        const normalizeArray = (v:any):string[]|undefined => { if (v===undefined||v===null) return undefined; if (Array.isArray(v)) return v.map(String); if (typeof v==='string') return v.split('\n').map((s)=>s.trim()).filter(Boolean); return [String(v)]; };
+        const normalized:any = {};
+        const maybeStack = normalizeArray(implObj.stack || implObj.tech || implObj.frameworks); if (maybeStack) normalized.stack = maybeStack;
+        const maybeLibs = normalizeArray(implObj.libraries || implObj.libs); if (maybeLibs) normalized.libraries = maybeLibs;
+        const maybeInfra = normalizeArray(implObj.infra || implObj.infrastructure); if (maybeInfra) normalized.infra = maybeInfra;
+        const maybeConfig = normalizeArray(implObj.config); if (maybeConfig) normalized.config = maybeConfig;
+        const maybeSteps = normalizeArray(implObj.steps || implObj.plan || implObj.implementationSteps); if (maybeSteps) normalized.steps = maybeSteps;
+        const maybeCode = normalizeArray(implObj.codeExamples || implObj.code); if (maybeCode) normalized.codeExamples = maybeCode;
+        if (implObj.estimatedEffortHours || implObj.estimatedEffort) { const n = Number(implObj.estimatedEffortHours ?? implObj.estimatedEffort); if (!Number.isNaN(n)) normalized.estimatedEffortHours = n; }
+
+        if (Object.keys(normalized).length > 0) { (t.specification as any).technicalImplementation = normalized; aggregatedRaw[t.id] = { raw: responseContent }; } else { aggregatedRaw[t.id] = { raw: responseContent, error: 'normalized_empty' }; failures.push({ taskId: t.id, error: 'normalized_empty' }); }
+
+        completed++; callbacks?.onEnrichmentProgress?.(completed, total, t.id);
+        await new Promise((r)=>setTimeout(r,150));
       }
+    };
 
-      if (!parsed) {
-        console.warn(`Per-task implementation parsing failed for ${t.id}. Truncated preview:\n${String(responseContent || '').slice(0,400)}`);
-        aggregatedRaw[t.id] = { raw: responseContent };
-        failures.push({ taskId: t.id, error: 'parsing_failed' });
-        callbacks?.onEnrichmentProgress?.(i + 1, total, t.id);
-        continue;
-      }
-
-      // Determine where the implementation object lives
-      let implObj: any = null;
-      if (parsed.technicalImplementation) implObj = parsed.technicalImplementation;
-      else if (Array.isArray(parsed.implementations) && parsed.implementations.length > 0) implObj = parsed.implementations[0].technicalImplementation || parsed.implementations[0];
-      else if (parsed.impl || parsed.implementation) implObj = parsed.impl || parsed.implementation;
-      else if (typeof parsed === 'object') implObj = parsed;
-
-      if (!implObj || Object.keys(implObj).length === 0) {
-        // No useful implementation found
-        aggregatedRaw[t.id] = { raw: responseContent };
-        failures.push({ taskId: t.id, error: 'no_implementation_found' });
-        continue;
-      }
-
-      // Normalize fields and attach to task
-      const normalizeArray = (v: any): string[] | undefined => {
-        if (v === undefined || v === null) return undefined;
-        if (Array.isArray(v)) return v.map(String);
-        if (typeof v === 'string') return v.split('\n').map((s) => s.trim()).filter(Boolean);
-        return [String(v)];
-      };
-
-      const normalized: any = {};
-      const maybeStack = normalizeArray(implObj.stack || implObj.tech || implObj.frameworks);
-      if (maybeStack) normalized.stack = maybeStack;
-      const maybeLibs = normalizeArray(implObj.libraries || implObj.libs);
-      if (maybeLibs) normalized.libraries = maybeLibs;
-      const maybeInfra = normalizeArray(implObj.infra || implObj.infrastructure);
-      if (maybeInfra) normalized.infra = maybeInfra;
-      const maybeConfig = normalizeArray(implObj.config);
-      if (maybeConfig) normalized.config = maybeConfig;
-      const maybeSteps = normalizeArray(implObj.steps || implObj.plan || implObj.implementationSteps);
-      if (maybeSteps) normalized.steps = maybeSteps;
-      const maybeCode = normalizeArray(implObj.codeExamples || implObj.code);
-      if (maybeCode) normalized.codeExamples = maybeCode;
-      if (implObj.estimatedEffortHours || implObj.estimatedEffort) {
-        const n = Number(implObj.estimatedEffortHours ?? implObj.estimatedEffort);
-        if (!Number.isNaN(n)) normalized.estimatedEffortHours = n;
-      }
-
-      if (Object.keys(normalized).length > 0) {
-        (t.specification as any).technicalImplementation = normalized;
-        aggregatedRaw[t.id] = { raw: responseContent };
-      } else {
-        aggregatedRaw[t.id] = { raw: responseContent, error: 'normalized_empty' };
-        failures.push({ taskId: t.id, error: 'normalized_empty' });
-      }
-
-      // report progress for this completed task
-      callbacks?.onEnrichmentProgress?.(i + 1, total, t.id);
-
-      // Small delay to avoid provider throttling
-      await new Promise((r) => setTimeout(r, 150));
-    }
+    const workers = Array(Math.max(1, Math.min(concurrency, updatedTasks.length))).fill(null).map(() => worker());
+    await Promise.all(workers);
 
     const rawString = JSON.stringify(aggregatedRaw);
     return { tasks: updatedTasks, raw: rawString, failures };
   } catch (err) {
     console.error('Failed to enrich tasks with implementation details (per-task):', err);
-    return { tasks };
+    return { tasks }; // return partial results if available
   }
+}
+
+// Public wrapper to enrich tasks (accepts either an array of tasks or a TaskSet)
+export async function enrichTaskSet(
+  tasksOrSet: ProgrammableTask[] | TaskSet,
+  context: TaskGenerationContext,
+  signal?: AbortSignal,
+  callbacks?: { onEnrichmentProgress?: (completed: number, total: number, currentTaskId?: string) => void },
+  concurrency: number = 1
+): Promise<{ tasks: ProgrammableTask[]; metadataUpdates?: any; raw?: string; failures?: { taskId: string; error: string }[] }> {
+  const tasks = Array.isArray(tasksOrSet) ? tasksOrSet : (tasksOrSet as TaskSet).tasks;
+  const res = await enrichTasksWithImplementation(tasks, context, signal, callbacks, concurrency);
+
+  const anyEnriched = res.tasks.some((t) => {
+    const impl = (t.specification as any).technicalImplementation;
+    return impl && Object.keys(impl).length > 0;
+  });
+
+  const metadataUpdates: any = {};
+  if (res.raw) metadataUpdates.architectureImplementationRaw = res.raw;
+  if (res.failures && res.failures.length > 0) {
+    metadataUpdates.architectureImplementationSkipped = res.failures[0].error;
+    metadataUpdates.architectureImplementationFailed = true;
+  }
+  metadataUpdates.architectureImplementationStatus = anyEnriched ? 'enriched' : (res.failures && res.failures.length > 0 ? 'failed' : 'not_enriched');
+
+  return { tasks: res.tasks, metadataUpdates, raw: res.raw, failures: res.failures };
 }
 
 

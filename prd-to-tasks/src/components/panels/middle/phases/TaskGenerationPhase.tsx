@@ -19,7 +19,9 @@ import { useUIStore } from '@/store/uiStore';
 import { usePRDStore } from '@/store/prdStore';
 import { useEntityStore } from '@/store/entityStore';
 import { useERDStore } from '@/store/erdStore';
-import { generateTasks, generateTasksWithArchitecture } from '@/core/task-generator';
+import { generateTasks, enrichTaskSet } from '@/core/task-generator';
+import type { TaskSet } from '@/types/task';
+import type { TaskGenerationContext } from '@/core';
 import { updateLLMRouter } from '@/core/llm/LLMRouter';
 import { useProject } from '@/hooks/useProject';
 import { toast } from 'sonner';
@@ -100,6 +102,145 @@ export function TaskGenerationPhase() {
 
   const [isEnriching, setIsEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<{completed:number; total:number; currentTaskId?:string}>({ completed: 0, total: 0 });
+  const [enrichingTaskIds, setEnrichingTaskIds] = useState<Set<string>>(new Set());
+  const [enrichFinished, setEnrichFinished] = useState(false);
+  const enrichAbortRef = useRef<AbortController | null>(null);
+
+  const markEnriching = (id: string) => setEnrichingTaskIds((s) => new Set(Array.from(s).concat(id)));
+  const unmarkEnriching = (id: string) => setEnrichingTaskIds((s) => { const arr = Array.from(s).filter(x => x !== id); return new Set(arr); });
+
+  // Stop enrichment if running
+  const stopEnrichment = () => {
+    enrichAbortRef.current?.abort();
+    enrichAbortRef.current = null;
+    setIsEnriching(false);
+    setEnrichFinished(true);
+  };
+
+  // Save results after enrichment (finished or stopped)
+  const handleSaveResults = async () => {
+    try {
+      await saveCurrentProject();
+      toast.success('Task results saved');
+      setEnrichFinished(false);
+    } catch (err) {
+      console.error('Failed to save enriched results:', err);
+      toast.error('Save failed');
+    }
+  };
+
+  // Manual enrichment handlers
+  const handleEnrichAll = async () => {
+    if (tasks.length === 0) return;
+    const settings = useSettingsStore.getState();
+    try {
+      updateLLMRouter({ apiKeys: settings.apiKeys, modelSelection: settings.modelSelection });
+    } catch (err) {
+      console.warn('Failed to initialize LLM router before enrichment:', err);
+    }
+
+    setIsEnriching(true);
+    setEnrichProgress({ completed: 0, total: tasks.length, currentTaskId: undefined });
+
+    try {
+      const attached = getArchitectureGuide();
+      const context: TaskGenerationContext = {
+        prd: prdStore.prd || ({ id: 'prd-1', projectName: 'Sample Project', moduleName: 'auth', version: '1.0.0' } as any),
+        entities: entityStore.entities,
+        relationships: entityStore.relationships,
+        dbml: erdStore.dbml,
+        architectureGuide: attached ? { id: attached.id, name: attached.name, content: attached.content, format: attached.format } : undefined,
+      } as TaskGenerationContext;
+
+const controller = new AbortController();
+      enrichAbortRef.current = controller;
+      setEnrichFinished(false);
+
+      const enriched = await enrichTaskSet(tasks, context, controller.signal, {
+        onEnrichmentProgress: (completed: number, total: number, currentTaskId?: string) => {
+          setEnrichProgress({ completed, total, currentTaskId });
+          if (currentTaskId) {
+            markEnriching(currentTaskId);
+            // auto unmark after a short time so row UI shows progress
+            setTimeout(() => unmarkEnriching(currentTaskId), 2000);
+          }
+        },
+      }, 3);
+
+      const currentSet = useTaskStore.getState().taskSet;
+      if (currentSet) {
+        const newSet: TaskSet = { ...currentSet, tasks: enriched.tasks, metadata: { ...(currentSet as any).metadata, ...(enriched.metadataUpdates || {}) } as any };
+        setTaskSet(newSet);
+      }
+
+      // Persist and set phase status
+      useProjectStore.getState().setPhaseDirect(4);
+      useProjectStore.getState().setDirty(true);
+      await saveCurrentProject();
+      setPhaseStatus(4, enriched.failures && enriched.failures.length > 0 ? 'has-issues' : 'completed');
+
+      toast.success('Tasks enriched successfully');
+    } catch (err) {
+      console.error('Enrich all failed:', err);
+      toast.error('Enrichment failed; see console');
+    } finally {
+      setIsEnriching(false);
+      setEnrichProgress({ completed: 0, total: 0, currentTaskId: undefined });
+    }
+  };
+
+  const handleEnrichTask = async (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    const settings = useSettingsStore.getState();
+    try {
+      updateLLMRouter({ apiKeys: settings.apiKeys, modelSelection: settings.modelSelection });
+    } catch (err) {
+      console.warn('Failed to initialize LLM router before enrichment:', err);
+    }
+
+    markEnriching(taskId);
+    setIsEnriching(true);
+    setEnrichProgress({ completed: 0, total: 1, currentTaskId: taskId });
+
+    try {
+      const attached = getArchitectureGuide();
+      const context: TaskGenerationContext = {
+        prd: prdStore.prd || ({ id: 'prd-1', projectName: 'Sample Project', moduleName: 'auth', version: '1.0.0' } as any),
+        entities: entityStore.entities,
+        relationships: entityStore.relationships,
+        dbml: erdStore.dbml,
+        architectureGuide: attached ? { id: attached.id, name: attached.name, content: attached.content, format: attached.format } : undefined,
+      } as TaskGenerationContext;
+
+      const enriched = await enrichTaskSet([task], context, undefined, {
+        onEnrichmentProgress: (completed: number, total: number, currentTaskId?: string) => {
+          setEnrichProgress({ completed, total, currentTaskId });
+        },
+      });
+
+      const currentSet = useTaskStore.getState().taskSet;
+      if (currentSet) {
+        const newTasks = currentSet.tasks.map((t) => (t.id === taskId ? enriched.tasks[0] : t));
+        const newSet: TaskSet = { ...currentSet, tasks: newTasks, metadata: { ...(currentSet as any).metadata, ...(enriched.metadataUpdates || {}) } as any };
+        setTaskSet(newSet);
+      }
+
+      // Persist
+      useProjectStore.getState().setDirty(true);
+      await saveCurrentProject();
+
+      toast.success('Task enriched');
+    } catch (err) {
+      console.error(`Enrich task ${taskId} failed:`, err);
+      toast.error('Enrichment failed; see console');
+    } finally {
+      unmarkEnriching(taskId);
+      setIsEnriching(false);
+      setEnrichProgress({ completed: 0, total: 0, currentTaskId: undefined });
+    }
+  };
 
   const handleGenerate = async () => {
     setGenerating(true, 0);
@@ -142,78 +283,30 @@ export function TaskGenerationPhase() {
     try {
       setGenerating(true, 95);
 
-      // Respect preview setting in advanced settings
-      const settings = useSettingsStore.getState();
-      if (settings.advanced.previewArchitectureRecommendations && attached && attached.content) {
-        // Ensure router is initialized with current settings before attempting extraction
-        try {
-          updateLLMRouter({ apiKeys: settings.apiKeys, modelSelection: settings.modelSelection });
-        } catch (err) {
-          console.warn('Failed to initialize LLM router for preview:', err);
-        }
+  
 
-        // Request preview only
-        let previewSet;
-        try {
-          previewSet = await generateTasksWithArchitecture(context as any, undefined, undefined, true);
-        } catch (err) {
-          console.error('Preview extraction failed:', err);
-          toast.error('Architecture preview failed. Check console for details.');
-          setGenerating(false);
-          return;
-        }
-
-        // Open preview modal with recommendations and metadata for diagnostics
-        useUIStore.getState().openModal('preview-architecture', {
-          recommendations: previewSet.metadata?.architectureRecommendations || [],
-          context,
-          metadata: previewSet.metadata || {},
-        });
-
-        setGenerating(false);
-        return;
-      }
-
-      // Otherwise apply directly
-      // Ensure LLM router is initialized (may be required for extraction/enrichment)
+      // Generate base tasks synchronously and show results immediately (no automatic LLM extraction/enrichment)
       try {
-        updateLLMRouter({ apiKeys: settings.apiKeys, modelSelection: settings.modelSelection });
-      } catch (err) {
-        console.warn('Failed to initialize LLM router before extraction:', err);
-      }
+        const base = generateTasks(context as any);
+        setTaskSet({ ...base, projectName: prd?.projectName || 'Sample Project' });
 
-      // Setup enrichment progress UI
-      setIsEnriching(true);
-      setEnrichProgress({ completed: 0, total: Math.max(0, entities.length), currentTaskId: undefined });
-
-      let taskSet;
-      try {
-        taskSet = await generateTasksWithArchitecture(
-          context as any,
-          undefined,
-          undefined,
-          false,
-          {
-            onEnrichmentProgress: (completed, total, currentTaskId) => {
-              setEnrichProgress({ completed, total, currentTaskId });
-            },
-          }
-        );
+        // Mark phase as completed for generation; enrichment is manual
+        try {
+          useProjectStore.getState().setPhaseDirect(4);
+          useProjectStore.getState().setDirty(true);
+          setPhaseStatus(4, 'completed');
+        } catch (err) {
+          console.warn('Failed to set phase status after generation:', err);
+        }
       } catch (err) {
-        console.error('Task generation with architecture failed:', err);
-        // Fallback to synchronous generator so user still gets tasks
-        toast.error('Task generation with architecture failed; falling back to basic generator');
-        taskSet = generateTasks(context as any);
+        console.error('Task generation failed:', err);
+        toast.error('Task generation failed; see console for details');
       }
 
       // Finish progress
       setGenerating(true, 100);
 
       setIsEnriching(false);
-      setTaskSet({
-        ...taskSet,
-        projectName: prd?.projectName || 'Sample Project',
-      });
 
       // Persist tasks and phase state immediately
       try {
@@ -229,21 +322,22 @@ export function TaskGenerationPhase() {
       }
 
       // Notify user if architecture extraction was skipped or failed
-      if (taskSet.metadata?.architectureExtractionSkipped) {
-        const reason = taskSet.metadata.architectureExtractionSkipped;
+      const currentTaskSet = useTaskStore.getState().taskSet;
+      if (currentTaskSet?.metadata?.architectureExtractionSkipped) {
+        const reason = currentTaskSet.metadata.architectureExtractionSkipped;
         if (reason === 'no_api_key') {
           toast('Architecture extraction skipped: No LLM API key configured.');
         } else {
           toast(`Architecture extraction skipped: ${reason}`);
         }
-      } else if (taskSet.metadata?.architectureExtractionRaw) {
+      } else if (currentTaskSet?.metadata?.architectureExtractionRaw) {
         toast.success('Architecture recommendations applied from attached guide.');
       }
 
       // Notify user if implementation enrichment was skipped/failed
-      const implStatus = taskSet.metadata?.architectureImplementationStatus;
-      if (implStatus === 'skipped' && taskSet.metadata?.architectureImplementationSkipped) {
-        const reason = taskSet.metadata.architectureImplementationSkipped;
+      const implStatus = currentTaskSet?.metadata?.architectureImplementationStatus;
+      if (implStatus === 'skipped' && currentTaskSet?.metadata?.architectureImplementationSkipped) {
+        const reason = currentTaskSet.metadata.architectureImplementationSkipped;
         if (reason === 'no_api_key') {
           toast('Implementation enrichment skipped: No LLM API key configured. Add an API key in Settings → API Keys to enable enrichment.');
         } else if (reason === 'implementation_enrichment_disabled') {
@@ -541,10 +635,28 @@ export function TaskGenerationPhase() {
         <div className="grid grid-cols-2 gap-4">
           {/* Task List */}
           <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-base">
-                Tasks ({filteredTasks.length})
-              </CardTitle>
+            <CardHeader className="py-3 flex items-center justify-between">
+              <CardTitle className="text-base">Tasks ({filteredTasks.length})</CardTitle>
+
+              <div className="flex items-center gap-2">
+                {isEnriching ? (
+                  <Button size="sm" variant="destructive" onClick={() => stopEnrichment()}>
+                    Stop
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => handleEnrichAll()} disabled={isEnriching || tasks.length === 0}>
+                    Enrich All
+                  </Button>
+                )}
+
+                <Button size="sm" variant="outline" onClick={() => handleSaveResults()} disabled={!enrichFinished && !useProjectStore.getState().isDirty}>
+                  Save Results
+                </Button>
+
+                <Button size="sm" variant="ghost" onClick={() => handleExport()}>
+                  Export
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <ScrollArea className="h-[400px]">
@@ -561,20 +673,25 @@ export function TaskGenerationPhase() {
                       onClick={() => selectTask(task.id)}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <Badge variant="outline" className="text-xs">
-                          {task.id}
-                        </Badge>
-                        <Badge
-                          className={cn(TIER_COLORS[task.tier], 'text-white text-xs')}
-                        >
-                          {task.tier}
-                        </Badge>
+                        <Badge variant="outline" className="text-xs">{task.id}</Badge>
+
+                        <div className="flex items-center gap-2">
+                          <Badge className={cn(TIER_COLORS[task.tier], 'text-white text-xs')}>{task.tier}</Badge>
+
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => { e.stopPropagation(); handleEnrichTask(task.id); }}
+                            disabled={isEnriching || enrichingTaskIds.has(task.id)}
+                          >
+                            {enrichingTaskIds.has(task.id) ? 'Enriching...' : 'Enrich'}
+                          </Button>
+                        </div>
                       </div>
+
                       <div className="font-medium text-sm">{task.title}</div>
                       <div className="flex gap-2 mt-1">
-                        <Badge variant="secondary" className="text-xs">
-                          {TASK_TYPE_LABELS[task.type]}
-                        </Badge>
+                        <Badge variant="secondary" className="text-xs">{TASK_TYPE_LABELS[task.type]}</Badge>
                       </div>
                     </div>
                   ))}
@@ -591,6 +708,12 @@ export function TaskGenerationPhase() {
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{selectedTask.id}</Badge>
                     <CardTitle className="text-base">{selectedTask.title}</CardTitle>
+
+                    <div className="ml-auto flex items-center gap-2">
+                      <Button size="sm" variant="outline" onClick={() => handleEnrichTask(selectedTask.id)} disabled={isEnriching || enrichingTaskIds.has(selectedTask.id)}>
+                        {enrichingTaskIds.has(selectedTask.id) ? 'Enriching...' : 'Enrich this task'}
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
