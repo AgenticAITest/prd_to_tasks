@@ -94,6 +94,7 @@ export function ERDBuilderPhase() {
           entities,
           relationships,
           dbml: generatedDBML,
+          sqlMigration: sql,
           generationOptions,
           validationResult: validation,
           createdAt: project?.createdAt ?? new Date(),
@@ -114,12 +115,12 @@ export function ERDBuilderPhase() {
       // Set phase status based on validation and update current phase so it is preserved on save
       if (validation.isValid) {
         setPhaseStatus(3, 'completed');
-        // Move to phase 3 (ERD Builder) as last executed step
-        useProjectStore.getState().setPhase(3);
+        // Force-set current phase to 3 so it persists as the last executed step
+        useProjectStore.getState().setPhaseDirect(3);
         toast.success('ERD generated successfully!');
       } else {
         setPhaseStatus(3, 'has-issues');
-        useProjectStore.getState().setPhase(3);
+        useProjectStore.getState().setPhaseDirect(3);
         toast.warning(`ERD generated with ${validation.errors.length} errors and ${validation.warnings.length} warnings`);
       }
 

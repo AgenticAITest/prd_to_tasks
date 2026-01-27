@@ -5,6 +5,8 @@ import { useEntityStore } from '@/store/entityStore';
 import { useERDStore } from '@/store/erdStore';
 import { useTaskStore } from '@/store/taskStore';
 import { saveProject, loadProject, deleteProject, addRecentProject } from '@/db';
+import { validateERD, generateDBML } from '@/core/erd-generator';
+import { toast } from 'sonner';
 import type { ProjectFile } from '@/types/prd';
 import type { DBProject } from '@/db/database';
 import { generateId } from '@/lib/utils';
@@ -113,16 +115,53 @@ export function useProject() {
           // Restore schema and associated validation/generation options where possible
           erdStore.setSchema(projectData.erdSchema);
 
-          if ((projectData.erdSchema as any).validation || (projectData.erdSchema as any).validationResult) {
-            const val = (projectData.erdSchema as any).validation || (projectData.erdSchema as any).validationResult;
+          // Also ensure dbml is set (defensive)
+          if (projectData.erdSchema.dbml) {
+            erdStore.setDBML(projectData.erdSchema.dbml);
+          }
+
+          let val = (projectData.erdSchema as any).validation || (projectData.erdSchema as any).validationResult;
+          // If validation result is missing, attempt to re-run validation from entities
+          if (!val) {
+            try {
+              const entitiesToValidate = projectData.entities && projectData.entities.length > 0 ? projectData.entities : useERDStore.getState().schema?.entities || [];
+              const relationshipsToValidate = projectData.relationships && projectData.relationships.length > 0 ? projectData.relationships : useERDStore.getState().schema?.relationships || [];
+              val = validateERD(entitiesToValidate, relationshipsToValidate);
+              erdStore.setValidationResult(val);
+            } catch (err) {
+              console.warn('Failed to validate ERD during load:', err);
+            }
+          } else {
             erdStore.setValidationResult(val);
           }
 
-          // Ensure the phase status reflects ERD validity when appropriate
-          if ((projectData.erdSchema as any).validationResult?.isValid === true) {
+          // If DBML missing, attempt to regenerate from entities + relationships
+          if (!projectData.erdSchema.dbml && projectData.entities && projectData.entities.length > 0) {
+            try {
+              const generatedDBML = generateDBML(projectData.entities, projectData.relationships || [], projectData.erdSchema.generationOptions || useERDStore.getState().generationOptions);
+              erdStore.setDBML(generatedDBML);
+            } catch (err) {
+              console.warn('Failed to generate DBML during load:', err);
+            }
+          }
+
+          // Determine validity and update phase status + current phase so UI enables the Proceed button
+          const isValid = val?.isValid === true;
+          const hasDBML = !!(projectData.erdSchema.dbml || useERDStore.getState().dbml);
+
+          if (hasDBML && isValid) {
             projectStore.setPhaseStatus(3, 'completed');
-          } else if ((projectData.erdSchema as any).validationResult) {
+            projectStore.setPhaseDirect(3);
+          } else if (val) {
             projectStore.setPhaseStatus(3, 'has-issues');
+            projectStore.setPhaseDirect(3);
+          }
+
+          if (hasDBML) {
+            // Debug: notify about restored ERD state
+            const dbmlLen = useERDStore.getState().dbml?.length ?? 0;
+            const restoredVal = useERDStore.getState().validationResult;
+            toast.info(`ERD restored — dbml ${dbmlLen} chars, valid: ${restoredVal?.isValid === true ? 'yes' : restoredVal?.isValid === false ? 'no' : 'unknown'}`);
           }
         }
 

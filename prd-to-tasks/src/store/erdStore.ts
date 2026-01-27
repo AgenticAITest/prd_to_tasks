@@ -69,7 +69,14 @@ export const useERDStore = create<ERDState>()((set, get) => ({
 
   // Actions
   setSchema: (schema: ERDSchema) => {
-    set({ schema, dbml: schema.dbml, error: null });
+    set({
+      schema,
+      dbml: schema.dbml,
+      sqlMigration: schema.sqlMigration || '',
+      validationResult: (schema as any).validationResult || (schema as any).validation || null,
+      generationOptions: schema.generationOptions || get().generationOptions,
+      error: null,
+    });
   },
 
   setDBML: (dbml: string) => {

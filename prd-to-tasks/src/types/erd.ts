@@ -11,6 +11,8 @@ export interface ERDSchema {
   entities: Entity[];
   relationships: Relationship[];
   dbml: string;
+  // Optional generated SQL migration accompanying the dbml
+  sqlMigration?: string;
   metadata?: ERDMetadata;
   generationOptions?: DBMLGenerationOptions;
   validation?: ERDValidationResult;
