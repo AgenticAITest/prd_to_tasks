@@ -18,6 +18,7 @@ import { updateLLMRouter } from '@/core/llm/LLMRouter';
 import { EntityExtractionReviewPanel } from './EntityExtractionReviewPanel';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useProject } from '@/hooks/useProject';
 import type { EntityType, DataType } from '@/types/entity';
 
 const ENTITY_TYPES: { value: EntityType; label: string }[] = [
@@ -70,9 +71,10 @@ export function EntityExtractionPhase() {
     discardExtraction,
     setError,
   } = useEntityStore();
-  const { setPhaseStatus, advancePhase } = useProjectStore();
+  const { setPhaseStatus, advancePhase, project, isDirty } = useProjectStore();
   const { prd, rawContent } = usePRDStore();
   const { apiKeys, modelSelection } = useSettingsStore();
+  const { saveCurrentProject } = useProject();
 
   const selectedEntity = getSelectedEntity();
   const hasApiKey = Object.values(apiKeys).some((key) => key && key.length > 0);
@@ -158,9 +160,18 @@ export function EntityExtractionPhase() {
     }
   };
 
-  const handleAcceptExtraction = () => {
+  const handleAcceptExtraction = async () => {
     confirmExtraction();
-    toast.success('Entities confirmed! You can now edit them or proceed to ERD.');
+    toast.success('Entities confirmed! Saving...');
+
+    // Save the confirmed entities immediately
+    try {
+      await saveCurrentProject();
+      toast.success('Entities saved');
+    } catch (err) {
+      console.error('Failed to save entities after confirmation:', err);
+      toast.error('Failed to save entities');
+    }
   };
 
   const handleDiscardExtraction = () => {
@@ -201,10 +212,20 @@ export function EntityExtractionPhase() {
     });
   };
 
-  const handleProceed = () => {
-    if (entities.length > 0) {
+  const handleProceed = async () => {
+    if (entities.length === 0) return;
+
+    // If there are unsaved changes, save before proceeding
+    try {
+      if (isDirty) {
+        await saveCurrentProject();
+        toast.success('Project saved. Proceeding to ERD.');
+      }
       setPhaseStatus(2, 'completed');
       advancePhase();
+    } catch (err) {
+      console.error('Failed to save before proceeding:', err);
+      toast.error('Failed to save project. Please try again before proceeding.');
     }
   };
 
@@ -269,6 +290,23 @@ export function EntityExtractionPhase() {
           </Button>
           <Button onClick={handleProceed} disabled={entities.length === 0}>
             Proceed to ERD
+          </Button>
+
+          {/* Save confirmed extraction */}
+          <Button
+            onClick={async () => {
+              try {
+                await saveCurrentProject();
+                toast.success('Entities saved');
+              } catch (err) {
+                console.error('Failed to save entities:', err);
+                toast.error('Failed to save entities');
+              }
+            }}
+            variant="outline"
+            disabled={!project || entities.length === 0}
+          >
+            Save
           </Button>
         </div>
       </div>

@@ -6,6 +6,7 @@ import type {
   EntitySuggestion,
 } from '@/types/entity';
 import { generateId } from '@/lib/utils';
+import { useProjectStore } from '@/store/projectStore';
 
 export type ExtractionMode = 'idle' | 'extracting' | 'reviewing' | 'confirmed';
 
@@ -300,6 +301,8 @@ export const useEntityStore = create<EntityState>()((set, get) => ({
       extractionMode: 'confirmed',
       selectedEntityId: pendingEntities.length > 0 ? pendingEntities[0].id : null,
     });
+    // Mark project dirty so save actions become enabled
+    useProjectStore.getState().setDirty(true);
   },
 
   discardExtraction: () => {

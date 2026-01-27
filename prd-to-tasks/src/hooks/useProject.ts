@@ -51,6 +51,9 @@ export function useProject() {
             description: project.description,
             createdAt: new Date(),
             updatedAt: new Date(),
+            // initial phase state
+            currentPhase: projectStore.currentPhase,
+            phaseStatus: projectStore.phaseStatus,
             files: [],
           };
 
@@ -120,19 +123,34 @@ export function useProject() {
           prdStore.setSemanticAnalysisResult(projectData.semanticAnalysisResult, false);
         }
 
-        // Set phase status for PRD Analysis (phase 1) based on saved analysis results
+        // Restore saved phase statuses and current phase if available
         try {
-          const hasSemantic = !!projectData.semanticAnalysisResult;
-          const hasClassic = !!projectData.prd && !!(projectData.prd as any).analysisResults;
+          if (projectData.phaseStatus) {
+            // Apply saved statuses for known phases
+            Object.entries(projectData.phaseStatus).forEach(([phaseStr, status]) => {
+              const phaseNum = Number(phaseStr) as 1 | 2 | 3 | 4;
+              if ([1,2,3,4].includes(phaseNum)) {
+                projectStore.setPhaseStatus(phaseNum as 1|2|3|4, status as any);
+              }
+            });
+          }
 
-          if (hasSemantic) {
-            const canProceed = projectData.semanticAnalysisResult!.overallAssessment?.canProceed;
-            if (canProceed) projectStore.setPhaseStatus(1, 'completed');
-            else projectStore.setPhaseStatus(1, 'has-issues');
-          } else if (hasClassic) {
-            const blocking = (projectData.prd as any).analysisResults.blockingIssues || [];
-            if (blocking.length > 0) projectStore.setPhaseStatus(1, 'has-issues');
-            else projectStore.setPhaseStatus(1, 'completed');
+          if (projectData.currentPhase && [1,2,3,4].includes(projectData.currentPhase)) {
+            projectStore.setPhase(projectData.currentPhase as 1|2|3|4);
+          } else {
+            // Fallback: set phase 1 status based on saved analysis (legacy behavior)
+            const hasSemantic = !!projectData.semanticAnalysisResult;
+            const hasClassic = !!projectData.prd && !!(projectData.prd as any).analysisResults;
+
+            if (hasSemantic) {
+              const canProceed = projectData.semanticAnalysisResult!.overallAssessment?.canProceed;
+              if (canProceed) projectStore.setPhaseStatus(1, 'completed');
+              else projectStore.setPhaseStatus(1, 'has-issues');
+            } else if (hasClassic) {
+              const blocking = (projectData.prd as any).analysisResults.blockingIssues || [];
+              if (blocking.length > 0) projectStore.setPhaseStatus(1, 'has-issues');
+              else projectStore.setPhaseStatus(1, 'completed');
+            }
           }
         } catch (err) {
           console.warn('Failed to set phase status from saved analysis:', err);
@@ -179,6 +197,9 @@ export function useProject() {
         erdSchema: erdStore.schema || undefined,
         taskSet: taskStore.taskSet || undefined,
         semanticAnalysisResult: prdStore.semanticAnalysisResult || undefined,
+        // Persist phase progress so we can restore where user left off
+        currentPhase: projectStore.currentPhase,
+        phaseStatus: projectStore.phaseStatus,
       };
 
       await saveProject(projectData);

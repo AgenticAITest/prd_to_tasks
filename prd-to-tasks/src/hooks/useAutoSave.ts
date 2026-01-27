@@ -73,6 +73,11 @@ export function useAutoSave(options: AutoSaveOptions = {}) {
             }
           : undefined,
         taskSet: taskStore.taskSet || undefined,
+        // persist semantic analysis too
+        semanticAnalysisResult: prdStore.semanticAnalysisResult || undefined,
+        // phase state
+        currentPhase: projectStore.currentPhase,
+        phaseStatus: projectStore.phaseStatus,
         createdAt: project.createdAt,
         updatedAt: new Date(),
       };
