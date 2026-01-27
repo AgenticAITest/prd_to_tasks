@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { ProjectFile } from '@/types/prd';
 import { generateId } from '@/lib/utils';
 
-export type PhaseNumber = 1 | 2 | 3 | 4;
+export type PhaseNumber = 1 | 2 | 3 | 4 | 5;
 export type PhaseStatus = 'locked' | 'active' | 'completed' | 'has-issues';
 
 export interface Project {
@@ -56,6 +56,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     2: 'locked',
     3: 'locked',
     4: 'locked',
+    5: 'locked',
   },
   files: [],
   isDirty: false,
@@ -79,6 +80,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         2: 'locked',
         3: 'locked',
         4: 'locked',
+        5: 'locked',
       },
       files: [],
       isDirty: true,
@@ -97,6 +99,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         2: 'locked',
         3: 'locked',
         4: 'locked',
+        5: 'locked',
       },
       isDirty: false,
     });
@@ -124,6 +127,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         2: 'locked',
         3: 'locked',
         4: 'locked',
+        5: 'locked',
       },
       files: [],
       isDirty: false,
@@ -171,7 +175,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   advancePhase: () => {
     const { currentPhase, phaseStatus } = get();
 
-    if (currentPhase < 4 && phaseStatus[currentPhase] === 'completed') {
+    if (currentPhase < 5 && phaseStatus[currentPhase] === 'completed') {
       const nextPhase = (currentPhase + 1) as PhaseNumber;
       set(state => ({
         currentPhase: nextPhase,

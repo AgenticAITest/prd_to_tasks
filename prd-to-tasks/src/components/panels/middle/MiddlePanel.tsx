@@ -3,6 +3,7 @@ import { PRDAnalysisPhase } from './phases/PRDAnalysisPhase';
 import { EntityExtractionPhase } from './phases/EntityExtractionPhase';
 import { ERDBuilderPhase } from './phases/ERDBuilderPhase';
 import { TaskGenerationPhase } from './phases/TaskGenerationPhase';
+import { ExecutionPhase } from './phases/ExecutionPhase';
 import { useProjectStore } from '@/store/projectStore';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -11,6 +12,7 @@ const PHASE_COMPONENTS = {
   2: EntityExtractionPhase,
   3: ERDBuilderPhase,
   4: TaskGenerationPhase,
+  5: ExecutionPhase,
 };
 
 export function MiddlePanel() {
