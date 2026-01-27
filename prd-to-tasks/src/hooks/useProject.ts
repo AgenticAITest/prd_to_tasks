@@ -5,7 +5,7 @@ import { useEntityStore } from '@/store/entityStore';
 import { useERDStore } from '@/store/erdStore';
 import { useTaskStore } from '@/store/taskStore';
 import { saveProject, loadProject, deleteProject, addRecentProject } from '@/db';
-import { validateERD, generateDBML } from '@/core/erd-generator';
+import { validateERD, generateDBML, generateMigrationSQL } from '@/core/erd-generator';
 import { toast } from 'sonner';
 import type { ProjectFile } from '@/types/prd';
 import type { DBProject } from '@/db/database';
@@ -162,6 +162,63 @@ export function useProject() {
             const dbmlLen = useERDStore.getState().dbml?.length ?? 0;
             const restoredVal = useERDStore.getState().validationResult;
             toast.info(`ERD restored — dbml ${dbmlLen} chars, valid: ${restoredVal?.isValid === true ? 'yes' : restoredVal?.isValid === false ? 'no' : 'unknown'}`);
+          }
+        } else if (!projectData.erdSchema && projectData.entities && projectData.entities.length > 0) {
+          // No saved ERD schema object exists — attempt to regenerate DBML/SQL/validation from entities and persist it
+          try {
+            const generatedDBML = generateDBML(projectData.entities, projectData.relationships || [], useERDStore.getState().generationOptions);
+            const validation = validateERD(projectData.entities, projectData.relationships || []);
+            const sql = generateMigrationSQL(projectData.entities, projectData.relationships || [], useERDStore.getState().generationOptions.schemaName || 'public');
+
+            // Set in-memory ERD state so UI shows the DBML and SQL immediately
+            erdStore.setDBML(generatedDBML);
+            erdStore.setSqlMigration(sql);
+            erdStore.setValidationResult(validation);
+
+            // Construct a minimal ERD schema object and set it so future saves persist it
+            const project = useProjectStore.getState().project;
+            const erdSchema = {
+              id: `erd-${project?.id ?? Date.now()}`,
+              projectId: projectData.projectId,
+              name: project?.name ?? 'schema',
+              version: '1.0.0',
+              description: '',
+              entities: projectData.entities,
+              relationships: projectData.relationships || [],
+              dbml: generatedDBML,
+              sqlMigration: sql,
+              generationOptions: useERDStore.getState().generationOptions,
+              validationResult: validation,
+              createdAt: project?.createdAt ?? new Date(),
+              updatedAt: new Date(),
+            };
+
+            erdStore.setSchema(erdSchema);
+
+            // Update phase status so UI is restored to ERD phase
+            if (validation.isValid) {
+              projectStore.setPhaseStatus(3, 'completed');
+              projectStore.setPhaseDirect(3);
+            } else {
+              projectStore.setPhaseStatus(3, 'has-issues');
+              projectStore.setPhaseDirect(3);
+            }
+
+            // Persist the regenerated ERD to DB so reopening immediately keeps it
+            try {
+              await saveProject({
+                ...projectData,
+                erdSchema,
+                updatedAt: new Date(),
+              });
+
+              toast.success('ERD regenerated from entities and saved');
+            } catch (err) {
+              console.warn('Failed to save regenerated ERD during load:', err);
+              toast.error('Failed to persist regenerated ERD; please save the project manually');
+            }
+          } catch (err) {
+            console.warn('Failed to regenerate ERD during load:', err);
           }
         }
 

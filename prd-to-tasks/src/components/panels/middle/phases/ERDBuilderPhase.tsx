@@ -38,6 +38,7 @@ export function ERDBuilderPhase() {
     setSqlMigration,
     setValidationResult,
     updateGenerationOptions,
+    setSchema,
   } = useERDStore();
 
   const {
