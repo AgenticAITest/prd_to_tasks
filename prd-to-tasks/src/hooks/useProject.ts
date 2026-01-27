@@ -120,6 +120,24 @@ export function useProject() {
           prdStore.setSemanticAnalysisResult(projectData.semanticAnalysisResult, false);
         }
 
+        // Set phase status for PRD Analysis (phase 1) based on saved analysis results
+        try {
+          const hasSemantic = !!projectData.semanticAnalysisResult;
+          const hasClassic = !!projectData.prd && !!(projectData.prd as any).analysisResults;
+
+          if (hasSemantic) {
+            const canProceed = projectData.semanticAnalysisResult!.overallAssessment?.canProceed;
+            if (canProceed) projectStore.setPhaseStatus(1, 'completed');
+            else projectStore.setPhaseStatus(1, 'has-issues');
+          } else if (hasClassic) {
+            const blocking = (projectData.prd as any).analysisResults.blockingIssues || [];
+            if (blocking.length > 0) projectStore.setPhaseStatus(1, 'has-issues');
+            else projectStore.setPhaseStatus(1, 'completed');
+          }
+        } catch (err) {
+          console.warn('Failed to set phase status from saved analysis:', err);
+        }
+
         // Update recent projects in DB
         await addRecentProject(projectData.projectId, projectData.name);
 
