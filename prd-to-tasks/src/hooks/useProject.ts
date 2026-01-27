@@ -108,9 +108,22 @@ export function useProject() {
           projectData.relationships.forEach((rel) => entityStore.addRelationship(rel));
         }
 
-        // Restore ERD schema
+        // Restore ERD schema (full object) if present
         if (projectData.erdSchema) {
-          erdStore.setDBML(projectData.erdSchema.dbml);
+          // Restore schema and associated validation/generation options where possible
+          erdStore.setSchema(projectData.erdSchema);
+
+          if ((projectData.erdSchema as any).validation || (projectData.erdSchema as any).validationResult) {
+            const val = (projectData.erdSchema as any).validation || (projectData.erdSchema as any).validationResult;
+            erdStore.setValidationResult(val);
+          }
+
+          // Ensure the phase status reflects ERD validity when appropriate
+          if ((projectData.erdSchema as any).validationResult?.isValid === true) {
+            projectStore.setPhaseStatus(3, 'completed');
+          } else if ((projectData.erdSchema as any).validationResult) {
+            projectStore.setPhaseStatus(3, 'has-issues');
+          }
         }
 
         // Restore tasks
@@ -136,7 +149,8 @@ export function useProject() {
           }
 
           if (projectData.currentPhase && [1,2,3,4].includes(projectData.currentPhase)) {
-            projectStore.setPhase(projectData.currentPhase as 1|2|3|4);
+            // Force-set phase directly to ensure UI restores to saved step
+            projectStore.setPhaseDirect(projectData.currentPhase as 1|2|3|4);
           } else {
             // Fallback: set phase 1 status based on saved analysis (legacy behavior)
             const hasSemantic = !!projectData.semanticAnalysisResult;

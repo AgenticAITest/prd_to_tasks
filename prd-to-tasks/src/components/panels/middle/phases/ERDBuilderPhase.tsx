@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useERDStore } from '@/store/erdStore';
 import { useEntityStore } from '@/store/entityStore';
 import { useProjectStore } from '@/store/projectStore';
+import { useProject } from '@/hooks/useProject';
 import { toast } from 'sonner';
 
 // Import real generators
@@ -47,7 +48,8 @@ export function ERDBuilderPhase() {
     removeRelationship,
   } = useEntityStore();
 
-  const { setPhaseStatus, advancePhase } = useProjectStore();
+  const { setPhaseStatus, advancePhase, project, isDirty } = useProjectStore();
+  const { saveCurrentProject } = useProject();
 
   const handleGenerate = async () => {
     if (entities.length === 0) {
@@ -80,17 +82,54 @@ export function ERDBuilderPhase() {
       );
       setSqlMigration(sql);
 
+      // Also construct a full ERD schema object and set it so it will be saved
+      try {
+        const project = useProjectStore.getState().project;
+        const erdSchema = {
+          id: `erd-${project?.id ?? Date.now()}`,
+          projectId: project?.id,
+          name: project?.name ?? 'schema',
+          version: '1.0.0',
+          description: '',
+          entities,
+          relationships,
+          dbml: generatedDBML,
+          generationOptions,
+          validationResult: validation,
+          createdAt: project?.createdAt ?? new Date(),
+          updatedAt: new Date(),
+        };
+        setSchema(erdSchema);
+      } catch (err) {
+        console.warn('Failed to set ERD schema object:', err);
+      }
+
       // Step 4: Complete (100%)
       await new Promise((r) => setTimeout(r, 100));
       setGenerating(false, 100);
 
-      // Set phase status based on validation
+      // Mark project dirty so save actions become enabled
+      useProjectStore.getState().setDirty(true);
+
+      // Set phase status based on validation and update current phase so it is preserved on save
       if (validation.isValid) {
         setPhaseStatus(3, 'completed');
+        // Move to phase 3 (ERD Builder) as last executed step
+        useProjectStore.getState().setPhase(3);
         toast.success('ERD generated successfully!');
       } else {
         setPhaseStatus(3, 'has-issues');
+        useProjectStore.getState().setPhase(3);
         toast.warning(`ERD generated with ${validation.errors.length} errors and ${validation.warnings.length} warnings`);
+      }
+
+      // Persist the project immediately so phase state and ERD are saved
+      try {
+        await saveCurrentProject();
+        toast.success('ERD saved');
+      } catch (err) {
+        console.error('Failed to save ERD after generation:', err);
+        toast.error('Failed to save ERD after generation');
       }
     } catch (error) {
       setGenerating(false);
@@ -182,7 +221,19 @@ export function ERDBuilderPhase() {
               <TooltipTrigger asChild>
                 <span>
                   <Button
-                    onClick={handleProceed}
+                    onClick={async () => {
+                      try {
+                        // Save before proceeding if dirty
+                        if (isDirty) {
+                          await saveCurrentProject();
+                          toast.success('Project saved. Proceeding to Tasks');
+                        }
+                        handleProceed();
+                      } catch (err) {
+                        console.error('Failed to save before proceeding:', err);
+                        toast.error('Failed to save project. Please try again.');
+                      }
+                    }}
                     disabled={!canProceed}
                   >
                     Proceed to Tasks
@@ -196,6 +247,23 @@ export function ERDBuilderPhase() {
               )}
             </Tooltip>
           </TooltipProvider>
+
+          {/* Save ERD button */}
+          <Button
+            onClick={async () => {
+              try {
+                await saveCurrentProject();
+                toast.success('ERD saved');
+              } catch (err) {
+                console.error('Failed to save ERD:', err);
+                toast.error('Failed to save ERD');
+              }
+            }}
+            variant="outline"
+            disabled={!project}
+          >
+            Save
+          </Button>
         </div>
       </div>
 

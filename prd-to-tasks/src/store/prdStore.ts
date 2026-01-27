@@ -35,8 +35,8 @@ interface PRDState {
 
   // Actions
   setRawContent: (content: string) => void;
-  setPRD: (prd: StructuredPRD) => void;
-  setAnalysisResult: (result: AnalysisResult) => void;
+  setPRD: (prd: StructuredPRD, markDirty?: boolean) => void;
+  setAnalysisResult: (result: AnalysisResult, markDirty?: boolean) => void;
   clearPRD: () => void;
 
   // FR management
@@ -64,7 +64,7 @@ interface PRDState {
   setParsing: (parsing: boolean, progress?: number) => void;
   setAnalyzing: (analyzing: boolean, progress?: number) => void;
   setSemanticAnalyzing: (analyzing: boolean, progress?: number) => void;
-  setSemanticAnalysisResult: (result: SemanticAnalysisResult) => void;
+  setSemanticAnalysisResult: (result: SemanticAnalysisResult, markDirty?: boolean) => void;
   clearSemanticAnalysis: () => void;
   setError: (error: string | null) => void;
 

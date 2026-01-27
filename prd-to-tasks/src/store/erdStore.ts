@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useProjectStore } from '@/store/projectStore';
 import type {
   ERDSchema,
   ERDValidationResult,
@@ -73,10 +74,13 @@ export const useERDStore = create<ERDState>()((set, get) => ({
 
   setDBML: (dbml: string) => {
     set({ dbml });
+    // Mark project dirty so save actions become enabled
+    useProjectStore.getState().setDirty(true);
   },
 
   setSqlMigration: (sql: string) => {
     set({ sqlMigration: sql });
+    useProjectStore.getState().setDirty(true);
   },
 
   setValidationResult: (result: ERDValidationResult) => {

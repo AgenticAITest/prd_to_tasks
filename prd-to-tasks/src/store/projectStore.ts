@@ -34,6 +34,7 @@ interface ProjectState {
 
   // Phase management
   setPhase: (phase: PhaseNumber) => void;
+  setPhaseDirect: (phase: PhaseNumber) => void; // Force-set current phase without guard checks
   setPhaseStatus: (phase: PhaseNumber, status: PhaseStatus) => void;
   canAdvanceToPhase: (phase: PhaseNumber) => boolean;
   advancePhase: () => void;
@@ -143,6 +144,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (canAdvanceToPhase(phase)) {
       set({ currentPhase: phase });
     }
+  },
+
+  // Force set current phase without performing canAdvance checks
+  setPhaseDirect: (phase: PhaseNumber) => {
+    set({ currentPhase: phase });
   },
 
   setPhaseStatus: (phase: PhaseNumber, status: PhaseStatus) => {

@@ -18,6 +18,11 @@ export interface DBProject {
   erdSchema?: ERDSchema;
   taskSet?: TaskSet;
   semanticAnalysisResult?: import('@/types/analysis').SemanticAnalysisResult;
+
+  // Phase tracking (optional) — persists where the user left off
+  currentPhase?: number;
+  phaseStatus?: Record<number, 'locked' | 'active' | 'completed' | 'has-issues'>;
+
   files?: ProjectFile[];
 }
 
