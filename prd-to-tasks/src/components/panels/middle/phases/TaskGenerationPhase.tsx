@@ -383,7 +383,7 @@ const controller = new AbortController();
           <div className="text-sm">
             <div className="mb-1 font-medium">Architecture Guide</div>
             <div className="text-xs text-muted-foreground">
-              Attach a technical architecture guide to influence task generation
+              Attach a technical / development guide to influence task generation
             </div>
           </div>
 
@@ -478,7 +478,7 @@ const controller = new AbortController();
                   Export
                 </Button>
 
-                <div className="flex items-center gap-2 ml-2">
+                {/* <div className="flex items-center gap-2 ml-2">
                   {recommendationsApplied ? (
                     <Badge variant="default" className="bg-green-600 text-white text-xs">
                       Architecture recommendations applied
@@ -504,7 +504,7 @@ const controller = new AbortController();
                   ) : (
                     <Badge variant="outline" className="text-xs">Not enriched</Badge>
                   )}
-                </div>
+                </div> */}
               </>
             )}
           </div>
@@ -512,15 +512,19 @@ const controller = new AbortController();
       </div>
 
       {/* Progress indicator */}
-      {isGenerating && (
+      {(isGenerating || isEnriching) && (
         <Card>
           <CardContent className="pt-4">
             <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>Generating tasks...</span>
-                <span>{generateProgress}%</span>
-              </div>
-              <Progress value={generateProgress} />
+              {isGenerating && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span>Generating tasks...</span>
+                    <span>{generateProgress}%</span>
+                  </div>
+                  <Progress value={generateProgress} />
+                </>
+              )}
 
               {/* Enrichment progress */}
               {isEnriching && (
