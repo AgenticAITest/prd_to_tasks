@@ -18,6 +18,12 @@ import { toast } from 'sonner';
 
 const DELAY_BETWEEN_TASKS = 10000; // 10 seconds between tasks for GitHub propagation
 
+// Helper to format elapsed time
+function formatElapsed(startTime: number): string {
+  const elapsed = Math.round((Date.now() - startTime) / 1000);
+  return `${elapsed}s`;
+}
+
 export function useAutoExecute() {
   const abortRef = useRef(false);
 
@@ -79,7 +85,14 @@ export function useAutoExecute() {
   // Execute a single code-generation task
   const executeCodeGenTask = useCallback(
     async (task: ProgrammableTask): Promise<{ success: boolean; error?: string }> => {
+      const taskStart = Date.now();
+      console.log(`[Auto-Execute] ▶ Starting task: ${task.title}`);
+      toast.loading(`Generating code for: ${task.title}`, { id: 'auto-execute-status' });
+
       // Generate code
+      const genStart = Date.now();
+      console.log(`[Auto-Execute]   → Code generation started...`);
+
       const result = await generateCodeForTask({
         task,
         projectName: environment?.projectName || 'project',
@@ -87,17 +100,23 @@ export function useAutoExecute() {
         relationships,
         dbml: dbml || '',
         onProgress: (progress, message) => {
-          console.log(`[Auto-Execute] [${progress}%] ${message}`);
+          console.log(`[Auto-Execute]   → [${progress}%] ${message} (${formatElapsed(genStart)})`);
         },
       });
 
+      console.log(`[Auto-Execute]   → Code generation finished (${formatElapsed(genStart)})`);
+
       if (!result.success) {
+        toast.dismiss('auto-execute-status');
         return { success: false, error: result.error || 'Code generation failed' };
       }
 
       if (result.files.length === 0) {
+        toast.dismiss('auto-execute-status');
         return { success: false, error: 'No files generated' };
       }
+
+      console.log(`[Auto-Execute]   → Generated ${result.files.length} file(s)`);
 
       // Auto-approve all files
       const filesToPush: EnvironmentGeneratedFile[] = result.files.map((f) => ({
@@ -107,10 +126,15 @@ export function useAutoExecute() {
 
       // Commit to GitHub
       if (!environment?.github || !apiKeys.github) {
+        toast.dismiss('auto-execute-status');
         return { success: false, error: 'GitHub not configured' };
       }
 
       try {
+        const commitStart = Date.now();
+        console.log(`[Auto-Execute]   → Pushing to GitHub...`);
+        toast.loading(`Committing to GitHub: ${task.title}`, { id: 'auto-execute-status' });
+
         await pushFilesToRepo(
           apiKeys.github,
           environment.github.owner,
@@ -120,9 +144,15 @@ export function useAutoExecute() {
           environment.github.defaultBranch
         );
 
+        console.log(`[Auto-Execute]   → GitHub push complete (${formatElapsed(commitStart)})`);
+        console.log(`[Auto-Execute] ✓ Task complete: ${task.title} (total: ${formatElapsed(taskStart)})`);
+        toast.dismiss('auto-execute-status');
+
         return { success: true };
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Commit failed';
+        console.log(`[Auto-Execute]   ✗ GitHub push failed: ${message}`);
+        toast.dismiss('auto-execute-status');
         return { success: false, error: message };
       }
     },
@@ -130,8 +160,12 @@ export function useAutoExecute() {
   );
 
   // Get the next task to execute (finds first non-completed task)
+  // NOTE: We read fresh state from the store to avoid stale closure issues
   const getNextTask = useCallback(
     (sortedTasks: ProgrammableTask[], startFromId?: string): ProgrammableTask | null => {
+      // Get fresh status from the store (not from closure)
+      const freshStatus = useExecutionStore.getState().taskExecutionStatus;
+
       let startIndex = 0;
 
       if (startFromId) {
@@ -139,7 +173,7 @@ export function useAutoExecute() {
         if (idx !== -1) {
           // Check if current task is manual and completed, then move to next
           const currentTask = sortedTasks[idx];
-          const currentStatus = taskExecutionStatus[currentTask.id];
+          const currentStatus = freshStatus[currentTask.id];
           if (currentStatus === 'manual-complete' || currentStatus === 'committed' || currentStatus === 'skipped') {
             startIndex = idx + 1;
           } else {
@@ -150,7 +184,7 @@ export function useAutoExecute() {
 
       for (let i = startIndex; i < sortedTasks.length; i++) {
         const task = sortedTasks[i];
-        const status = taskExecutionStatus[task.id];
+        const status = freshStatus[task.id];
 
         // Skip already completed tasks
         if (status === 'committed' || status === 'skipped' || status === 'manual-complete') {
@@ -162,7 +196,7 @@ export function useAutoExecute() {
 
       return null;
     },
-    [taskExecutionStatus]
+    [] // No dependencies - we read fresh state directly
   );
 
   // Main execution loop
@@ -171,9 +205,10 @@ export function useAutoExecute() {
       abortRef.current = false;
       const sortedTasks = getSortedTasks();
 
-      // Count remaining tasks
+      // Count remaining tasks (get fresh status from store)
+      const freshStatus = useExecutionStore.getState().taskExecutionStatus;
       const remainingTasks = sortedTasks.filter((t) => {
-        const status = taskExecutionStatus[t.id];
+        const status = freshStatus[t.id];
         return status !== 'committed' && status !== 'skipped' && status !== 'manual-complete';
       });
 
@@ -183,15 +218,22 @@ export function useAutoExecute() {
       }
 
       startAutoExecute(sortedTasks.length);
+      console.log(`[Auto-Execute] ═══════════════════════════════════════════`);
+      console.log(`[Auto-Execute] Starting auto-execute for ${remainingTasks.length} remaining tasks`);
+      console.log(`[Auto-Execute] ═══════════════════════════════════════════`);
       toast.info(`Starting auto-execute for ${remainingTasks.length} remaining tasks`);
 
       let completedCount = sortedTasks.length - remainingTasks.length;
       let currentTask = getNextTask(sortedTasks, startFromTaskId);
 
       while (currentTask && !abortRef.current) {
+        const taskIndex = sortedTasks.findIndex(t => t.id === currentTask!.id) + 1;
+        console.log(`[Auto-Execute] ───────────────────────────────────────────`);
+        console.log(`[Auto-Execute] Task ${taskIndex}/${sortedTasks.length}: ${currentTask.title}`);
         setAutoExecuteTask(currentTask.id, completedCount);
 
         const executionMode = currentTask.executionMode || 'code-generation';
+        console.log(`[Auto-Execute]   Mode: ${executionMode}`);
 
         // Handle based on execution mode
         if (executionMode === 'skip') {
@@ -242,7 +284,10 @@ export function useAutoExecute() {
         }
 
         // Delay between tasks
+        console.log(`[Auto-Execute] ⏳ Waiting ${DELAY_BETWEEN_TASKS / 1000}s before next task...`);
+        toast.loading(`Waiting ${DELAY_BETWEEN_TASKS / 1000}s before next task...`, { id: 'auto-execute-status', duration: DELAY_BETWEEN_TASKS });
         await new Promise((resolve) => setTimeout(resolve, DELAY_BETWEEN_TASKS));
+        toast.dismiss('auto-execute-status');
 
         // Get next task
         currentTask = getNextTask(sortedTasks, currentTask.id);
@@ -255,7 +300,6 @@ export function useAutoExecute() {
     },
     [
       getSortedTasks,
-      taskExecutionStatus,
       startAutoExecute,
       getNextTask,
       setAutoExecuteTask,
