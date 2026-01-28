@@ -1,4 +1,4 @@
-import { Check, AlertCircle, Lock, FileSearch, Database, List, ClipboardList } from 'lucide-react';
+import { Check, AlertCircle, Lock, FileSearch, Database, List, ClipboardList, Rocket } from 'lucide-react';
 import { useProjectStore, type PhaseNumber, type PhaseStatus } from '@/store/projectStore';
 import { cn } from '@/lib/utils';
 
@@ -33,6 +33,12 @@ const PHASES: Phase[] = [
     title: 'Task Generation',
     description: 'Generate programmable tasks',
     icon: ClipboardList,
+  },
+  {
+    number: 5,
+    title: 'Execute',
+    description: 'Create environment',
+    icon: Rocket,
   },
 ];
 

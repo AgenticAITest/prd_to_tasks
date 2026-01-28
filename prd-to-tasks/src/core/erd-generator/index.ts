@@ -70,9 +70,12 @@ export function generateDBML(
     lines.push('');
   });
 
+  // Build entity lookup for consistent naming in relationships
+  const entityLookup = buildEntityLookup(entities);
+
   // Generate relationship references
   relationships.forEach((rel) => {
-    lines.push(generateRelationshipRef(rel));
+    lines.push(generateRelationshipRef(rel, entityLookup));
   });
 
   return lines.join('\n');
@@ -177,10 +180,14 @@ function formatDefaultValue(value: unknown, dataType: DataType): string {
   }
 }
 
-function generateRelationshipRef(rel: Relationship): string {
+function generateRelationshipRef(rel: Relationship, entityLookup: Map<string, EntityLookup>): string {
   // DBML relationship syntax: Ref: from_table.from_field > to_table.to_field
   const cardinality = getDBMLCardinality(rel.type);
-  return `Ref: ${toSnakeCase(rel.from.entity)}.${toSnakeCase(rel.from.field)} ${cardinality} ${toSnakeCase(rel.to.entity)}.${toSnakeCase(rel.to.field)}`;
+  const fromTable = resolveTableName(rel.from.entity, entityLookup);
+  const fromColumn = resolveColumnName(rel.from.entity, rel.from.field, entityLookup);
+  const toTable = resolveTableName(rel.to.entity, entityLookup);
+  const toColumn = resolveColumnName(rel.to.entity, rel.to.field, entityLookup);
+  return `Ref: ${fromTable}.${fromColumn} ${cardinality} ${toTable}.${toColumn}`;
 }
 
 function getDBMLCardinality(relType: string): string {
@@ -473,6 +480,44 @@ function toPascalCase(str: string): string {
   return camel.charAt(0).toUpperCase() + camel.slice(1);
 }
 
+// Lookup types for consistent naming between tables and relationships
+interface EntityLookup {
+  tableName: string;
+  fields: Map<string, string>; // field name (lowercase) -> columnName
+}
+
+function buildEntityLookup(entities: Entity[]): Map<string, EntityLookup> {
+  const lookup = new Map<string, EntityLookup>();
+
+  entities.forEach((entity) => {
+    const fieldMap = new Map<string, string>();
+    entity.fields.forEach((field) => {
+      fieldMap.set(field.name.toLowerCase(), field.columnName);
+    });
+
+    lookup.set(entity.name.toLowerCase(), {
+      tableName: entity.tableName,
+      fields: fieldMap,
+    });
+  });
+
+  return lookup;
+}
+
+function resolveTableName(entityName: string, lookup: Map<string, EntityLookup>): string {
+  const entity = lookup.get(entityName.toLowerCase());
+  return entity?.tableName ?? toSnakeCase(entityName);
+}
+
+function resolveColumnName(entityName: string, fieldName: string, lookup: Map<string, EntityLookup>): string {
+  const entity = lookup.get(entityName.toLowerCase());
+  if (entity) {
+    const columnName = entity.fields.get(fieldName.toLowerCase());
+    if (columnName) return columnName;
+  }
+  return toSnakeCase(fieldName);
+}
+
 export function generateMigrationSQL(
   entities: Entity[],
   relationships: Relationship[],
@@ -534,11 +579,18 @@ export function generateMigrationSQL(
     lines.push('');
   }
 
+  // Build entity lookup for consistent naming in foreign keys
+  const entityLookup = buildEntityLookup(entities);
+
   // Create foreign key constraints
   relationships.forEach((rel) => {
-    const constraintName = `fk_${toSnakeCase(rel.from.entity)}_${toSnakeCase(rel.from.field)}`;
+    const fromTable = resolveTableName(rel.from.entity, entityLookup);
+    const fromColumn = resolveColumnName(rel.from.entity, rel.from.field, entityLookup);
+    const toTable = resolveTableName(rel.to.entity, entityLookup);
+    const toColumn = resolveColumnName(rel.to.entity, rel.to.field, entityLookup);
+    const constraintName = `fk_${fromTable}_${fromColumn}`;
     lines.push(
-      `ALTER TABLE ${schemaName}.${toSnakeCase(rel.from.entity)} ADD CONSTRAINT ${constraintName} FOREIGN KEY (${toSnakeCase(rel.from.field)}) REFERENCES ${schemaName}.${toSnakeCase(rel.to.entity)}(${toSnakeCase(rel.to.field)});`
+      `ALTER TABLE ${schemaName}.${fromTable} ADD CONSTRAINT ${constraintName} FOREIGN KEY (${fromColumn}) REFERENCES ${schemaName}.${toTable}(${toColumn});`
     );
   });
 

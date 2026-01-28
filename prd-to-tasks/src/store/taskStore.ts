@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useProjectStore } from '@/store/projectStore';
+import { persist } from 'zustand/middleware';
 import type {
   TaskSet,
   ProgrammableTask,
@@ -77,7 +78,9 @@ const defaultFilters: TaskFilters = {
   statuses: [],
 };
 
-export const useTaskStore = create<TaskState>()((set, get) => ({
+export const useTaskStore = create<TaskState>()(
+  persist(
+    (set, get) => ({
   // Initial state
   taskSet: null,
   tasks: [],
@@ -91,6 +94,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
 
   // Actions
   setTaskSet: (taskSet: TaskSet) => {
+    console.log('[taskStore] setTaskSet called with', taskSet.tasks.length, 'tasks');
     set({
       taskSet,
       tasks: taskSet.tasks,
@@ -100,6 +104,7 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
 
     // Mark project dirty so save actions become enabled
     useProjectStore.getState().setDirty(true);
+    console.log('[taskStore] setTaskSet complete');
   },
 
   updateTask: (taskId: string, updates: Partial<ProgrammableTask>) => {
@@ -297,7 +302,27 @@ export const useTaskStore = create<TaskState>()((set, get) => ({
         return JSON.stringify(output, null, 2);
     }
   },
-}));
+}),
+    {
+      name: 'prd-to-tasks-tasks',
+      partialize: (state) => ({
+        taskSet: state.taskSet,
+        tasks: state.tasks,
+        summary: state.summary,
+      }),
+      onRehydrateStorage: () => {
+        console.log('[taskStore] Starting hydration from localStorage...');
+        return (state, error) => {
+          if (error) {
+            console.error('[taskStore] Hydration error:', error);
+          } else {
+            console.log('[taskStore] Hydration complete. Tasks:', state?.tasks?.length ?? 0);
+          }
+        };
+      },
+    }
+  )
+);
 
 // Helper functions for export
 function toYAML(obj: unknown, indent = 0): string {

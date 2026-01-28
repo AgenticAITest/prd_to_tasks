@@ -107,12 +107,40 @@ export const usePRDStore = create<PRDState>()((set, get) => ({
   },
 
   setAnalysisResult: (result: AnalysisResult, markDirty: boolean = true) => {
+    // Map AnalysisResult into the older FunctionalAnalysis shape expected by StructuredPRD.analysisResults
+    const mapped: import('@/types/prd').FunctionalAnalysis = {
+      crudCoverage: (result.crudAnalysis?.entities || []).map((e) => ({
+        entity: e.entity,
+        create: !!e.operations.create?.covered,
+        read: !!e.operations.read?.covered,
+        update: !!e.operations.update?.covered,
+        delete: !!e.operations.delete?.covered,
+        missingOperations: [],
+      })),
+      workflowSummary: (result.workflowAnalysis?.workflows || []).map((w) => ({
+        frId: (w as any).frId || '',
+        name: (w as any).workflowName || (w as any).name || '',
+        stateCount: (w as any).stateCount || 0,
+        transitionCount: (w as any).transitionCount || 0,
+        hasApprovalSteps: !!(w as any).hasApprovalFlow,
+        isComplete: !!(w as any).isComplete,
+      })),
+      screenCoverage: {
+        totalScreens: result.screenAnalysis?.totalScreens || 0,
+        screensByType: result.screenAnalysis?.screensByType || {},
+        orphanedScreens: result.screenAnalysis?.orphanedScreens || [],
+        missingScreens: (result.screenAnalysis?.missingScreens || []).map(m => m.forFR || ''),
+      },
+      entityUsage: [],
+    };
+
     set(state => ({
       analysisResult: result,
       blockingIssues: result.blockingIssues,
       warnings: result.warnings,
-      prd: state.prd ? { ...state.prd, analysisResults: result, updatedAt: new Date() } : state.prd,
+      prd: state.prd ? { ...state.prd, analysisResults: mapped, updatedAt: new Date() } : state.prd,
     }));
+
     if (markDirty) useProjectStore.getState().setDirty(true);
   },
 

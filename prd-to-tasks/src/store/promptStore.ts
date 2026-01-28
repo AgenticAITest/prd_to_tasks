@@ -27,6 +27,7 @@ const initialCustomPrompts: Record<PromptKey, string | null> = {
   erdGeneration: null,
   architectureExtraction: null,
   taskImplementation: null,
+  copyPromptFooter: null,
 };
 
 export const usePromptStore = create<PromptState>()(
@@ -111,6 +112,7 @@ export const usePromptStore = create<PromptState>()(
             'erdGeneration',
             'architectureExtraction',
             'taskImplementation',
+            'copyPromptFooter',
           ];
 
           const newCustomPrompts = { ...initialCustomPrompts };

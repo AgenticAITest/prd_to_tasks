@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Play, Download, Filter, Search, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Play, Download, Filter, Search, RefreshCw, CheckCircle2, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,9 +16,6 @@ import {
 import { useTaskStore } from '@/store/taskStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useUIStore } from '@/store/uiStore';
-import { usePRDStore } from '@/store/prdStore';
-import { useEntityStore } from '@/store/entityStore';
-import { useERDStore } from '@/store/erdStore';
 import { generateTasks, enrichTaskSet } from '@/core/task-generator';
 import type { TaskSet } from '@/types/task';
 import type { TaskGenerationContext } from '@/core';
@@ -26,7 +23,11 @@ import { updateLLMRouter } from '@/core/llm/LLMRouter';
 import { useProject } from '@/hooks/useProject';
 import { toast } from 'sonner';
 import { useSettingsStore } from '@/store/settingsStore';
+import { usePRDStore } from '@/store/prdStore';
+import { useEntityStore } from '@/store/entityStore';
+import { useERDStore } from '@/store/erdStore';
 import { cn } from '@/lib/utils';
+import { generateTaskPrompt } from '@/lib/prompt-generator';
 import type { TaskType, TaskTier } from '@/types/task';
 
 const TASK_TYPE_LABELS: Record<TaskType, string> = {
@@ -43,8 +44,18 @@ const TASK_TYPE_LABELS: Record<TaskType, string> = {
   'business-logic': 'Business Logic',
   'workflow': 'Workflow',
   'integration': 'Integration',
-  'test': 'Test',
-  'documentation': 'Documentation',
+  'test': 'Test (Manual)',
+  'documentation': 'Docs (Manual)',
+  // Integration/orchestration task types
+  'environment-setup': 'Env Setup',
+  'service-layer': 'Service Layer',
+  'api-client': 'API Client',
+  'e2e-flow': 'E2E (Manual)',
+  'test-setup': 'Test Setup',
+  // Assembly/composition task types
+  'page-composition': 'Page',
+  'route-config': 'Routing',
+  'navigation': 'Navigation',
 };
 
 const TIER_COLORS: Record<TaskTier, string> = {
@@ -57,6 +68,7 @@ const TIER_COLORS: Record<TaskTier, string> = {
 export function TaskGenerationPhase() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [tierFilter, setTierFilter] = useState<string>('all');
+  const [promptCopied, setPromptCopied] = useState(false);
 
   const {
     tasks,
@@ -89,16 +101,10 @@ export function TaskGenerationPhase() {
   });
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
-  const taskSet = useTaskStore((s) => s.taskSet);
+
 
   // Status indicators
-  const recommendationsApplied = !!(taskSet && taskSet.metadata && Array.isArray(taskSet.metadata.architectureRecommendations) && taskSet.metadata.architectureRecommendations.length > 0);
-  const extractionSkipped = taskSet?.metadata?.architectureExtractionSkipped;
-  const implStatus = taskSet?.metadata?.architectureImplementationStatus as 'enriched' | 'skipped' | 'not_enriched' | 'failed' | undefined;
-  const hasAnyEnriched = implStatus === 'enriched' || tasks.some((t) => {
-    const impl = (t.specification as any).technicalImplementation;
-    return impl && Object.keys(impl).length > 0;
-  });
+  // (computed later when needed)
 
   const [isEnriching, setIsEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<{completed:number; total:number; currentTaskId?:string}>({ completed: 0, total: 0 });
@@ -243,6 +249,22 @@ const controller = new AbortController();
   };
 
   const handleGenerate = async () => {
+    const prd = prdStore.prd;
+    const entities = entityStore.entities;
+    const relationships = entityStore.relationships;
+    const dbml = erdStore.dbml;
+
+    // Validate that we have the required data from previous phases
+    if (!prd) {
+      toast.error('No PRD data available. Please complete Phase 1 first.');
+      return;
+    }
+
+    if (!entities || entities.length === 0) {
+      toast.error('No entities extracted. Please complete Phase 2 first.');
+      return;
+    }
+
     setGenerating(true, 0);
 
     // Simulate progress
@@ -251,18 +273,6 @@ const controller = new AbortController();
       setGenerating(true, i);
     }
 
-    // Ensure we have PRD and entities
-    const prd = prdStore.prd;
-    const entities = entityStore.entities;
-    const relationships = entityStore.relationships;
-    const dbml = erdStore.dbml;
-
-    if (!prd) {
-      // Fallback to sample if PRD is missing
-      console.warn('PRD missing — generating sample tasks');
-    }
-
-    // Get attached architecture guide, if any
     const attached = getArchitectureGuide();
 
     if (attached && (!attached.content || attached.content.trim() === '')) {
@@ -279,38 +289,28 @@ const controller = new AbortController();
         : undefined,
     };
 
-    // Call the async generator that may use LLM if architecture guide attached
     try {
       setGenerating(true, 95);
 
-  
-
       // Generate base tasks synchronously and show results immediately (no automatic LLM extraction/enrichment)
-      try {
-        const base = generateTasks(context as any);
-        setTaskSet({ ...base, projectName: prd?.projectName || 'Sample Project' });
+      const base = generateTasks(context as any);
+      setTaskSet({ ...base, projectName: prd?.projectName || 'Sample Project' });
 
-        // Mark phase as completed for generation; enrichment is manual
-        try {
-          useProjectStore.getState().setPhaseDirect(4);
-          useProjectStore.getState().setDirty(true);
-          setPhaseStatus(4, 'completed');
-        } catch (err) {
-          console.warn('Failed to set phase status after generation:', err);
-        }
+      // Mark phase as completed for generation; enrichment is manual
+      try {
+        useProjectStore.getState().setPhaseDirect(4);
+        useProjectStore.getState().setDirty(true);
+        setPhaseStatus(4, 'completed');
       } catch (err) {
-        console.error('Task generation failed:', err);
-        toast.error('Task generation failed; see console for details');
+        console.warn('Failed to set phase status after generation:', err);
       }
 
       // Finish progress
       setGenerating(true, 100);
-
       setIsEnriching(false);
 
       // Persist tasks and phase state immediately
       try {
-        // Force current phase to 4 so it is remembered on reload
         useProjectStore.getState().setPhaseDirect(4);
         useProjectStore.getState().setDirty(true);
 
@@ -321,7 +321,7 @@ const controller = new AbortController();
         toast.error('Failed to save tasks; please save the project manually');
       }
 
-      // Notify user if architecture extraction was skipped or failed
+      // Notify user about extraction/enrichment status
       const currentTaskSet = useTaskStore.getState().taskSet;
       if (currentTaskSet?.metadata?.architectureExtractionSkipped) {
         const reason = currentTaskSet.metadata.architectureExtractionSkipped;
@@ -334,9 +334,8 @@ const controller = new AbortController();
         toast.success('Architecture recommendations applied from attached guide.');
       }
 
-      // Notify user if implementation enrichment was skipped/failed
-      const implStatus = currentTaskSet?.metadata?.architectureImplementationStatus;
-      if (implStatus === 'skipped' && currentTaskSet?.metadata?.architectureImplementationSkipped) {
+      const implStatusLocal = currentTaskSet?.metadata?.architectureImplementationStatus;
+      if (implStatusLocal === 'skipped' && currentTaskSet?.metadata?.architectureImplementationSkipped) {
         const reason = currentTaskSet.metadata.architectureImplementationSkipped;
         if (reason === 'no_api_key') {
           toast('Implementation enrichment skipped: No LLM API key configured. Add an API key in Settings → API Keys to enable enrichment.');
@@ -345,26 +344,42 @@ const controller = new AbortController();
         } else {
           toast(`Implementation enrichment skipped: ${reason}`);
         }
-      } else if (implStatus === 'failed') {
+      } else if (implStatusLocal === 'failed') {
         toast.error('Implementation enrichment attempted but failed. Check console for details.');
-      } else if (implStatus === 'enriched') {
+      } else if (implStatusLocal === 'enriched') {
         toast.success('Tasks enriched with technical implementation guidance.');
       }
-    } catch (err) {
-      console.error('Task generation failed:', err);
-      setGenerating(false);
-      toast.error('Task generation failed. See console for details.');
-      // Fallback to synchronous generator
-      const fallback = generateTasks(context as any);
-      setTaskSet({ ...fallback, projectName: prd?.projectName || 'Sample Project' });
-    }
 
-    setGenerating(false);
-    setPhaseStatus(4, 'completed');
+      setGenerating(false);
+      setPhaseStatus(4, 'completed');
+      toast.success(`Generated ${useTaskStore.getState().taskSet?.tasks.length ?? 0} tasks successfully`);
+    } catch (error) {
+      console.error('Task generation failed:', error);
+      setGenerating(false);
+      toast.error('Failed to generate tasks. Please try again.');
+
+      // Fallback to synchronous generator
+      try {
+        const fallback = generateTasks(context as any);
+        setTaskSet({ ...fallback, projectName: prd?.projectName || 'Sample Project' });
+      } catch (fallbackErr) {
+        console.error('Fallback generation failed:', fallbackErr);
+      }
+    }
   };
 
   const handleExport = () => {
     openModal('export');
+  };
+
+  const handleCopyPrompt = async () => {
+    if (!selectedTask) return;
+
+    const prompt = generateTaskPrompt(selectedTask);
+    await navigator.clipboard.writeText(prompt);
+    setPromptCopied(true);
+    toast.success('Prompt copied to clipboard');
+    setTimeout(() => setPromptCopied(false), 2000);
   };
 
   return (
@@ -716,6 +731,11 @@ const controller = new AbortController();
                     <div className="ml-auto flex items-center gap-2">
                       <Button size="sm" variant="outline" onClick={() => handleEnrichTask(selectedTask.id)} disabled={isEnriching || enrichingTaskIds.has(selectedTask.id)}>
                         {enrichingTaskIds.has(selectedTask.id) ? 'Enriching...' : 'Enrich this task'}
+                      </Button>
+
+                      <Button size="sm" variant="ghost" onClick={handleCopyPrompt} disabled={!selectedTask}>
+                        <Copy className="h-4 w-4 mr-2" />
+                        {promptCopied ? 'Copied' : 'Copy Prompt'}
                       </Button>
                     </div>
                   </div>

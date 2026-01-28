@@ -11,7 +11,7 @@ interface ProjectActionsProps {
 }
 
 export function ProjectActions({ collapsed = false }: ProjectActionsProps) {
-  const { project, files, isDirty, setDirty } = useProjectStore();
+  const { project, isDirty, setDirty } = useProjectStore();
   const { openModal } = useUIStore();
   const { saveCurrentProject } = useProject();
 

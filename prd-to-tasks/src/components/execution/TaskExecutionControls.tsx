@@ -1,0 +1,453 @@
+/**
+ * TaskExecutionControls Component
+ * Generate/Approve/Reject/Commit buttons for task execution
+ */
+
+import { useState, useEffect, useRef } from 'react';
+import {
+  Play,
+  Check,
+  RefreshCw,
+  GitCommitHorizontal,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  SkipForward,
+  User,
+  AlertTriangle,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useExecutionStore, type TaskExecutionStatus } from '@/store/executionStore';
+import { useEnvironmentStore } from '@/store/environmentStore';
+import { useIntegrationStore } from '@/store/integrationStore';
+import { useEntityStore } from '@/store/entityStore';
+import { useERDStore } from '@/store/erdStore';
+import { useTaskStore } from '@/store/taskStore';
+import { generateCodeForTask } from '@/core/code-generator';
+import { pushFilesToRepo } from '@/core/environment/github-client';
+import type { GeneratedFile as EnvironmentGeneratedFile } from '@/types/environment';
+import { toast } from 'sonner';
+
+interface TaskExecutionControlsProps {
+  taskId: string;
+}
+
+const COMMIT_COOLDOWN_SECONDS = 10;
+
+export function TaskExecutionControls({ taskId }: TaskExecutionControlsProps) {
+  const [commitProgress, setCommitProgress] = useState(0);
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [commitCooldown, setCommitCooldown] = useState(0);
+  // Use number for browser setInterval timer id (NodeJS namespace isn't available in DOM builds)
+  const cooldownTimerRef = useRef<number | null>(null);
+
+  // Cleanup cooldown timer on unmount
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Start cooldown countdown
+  const startCommitCooldown = () => {
+    setCommitCooldown(COMMIT_COOLDOWN_SECONDS);
+
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+    }
+
+    cooldownTimerRef.current = setInterval(() => {
+      setCommitCooldown((prev) => {
+        if (prev <= 1) {
+          if (cooldownTimerRef.current) {
+            clearInterval(cooldownTimerRef.current);
+            cooldownTimerRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  // Stores
+  const task = useTaskStore((s) => s.tasks.find((t) => t.id === taskId));
+  const { entities, relationships } = useEntityStore();
+  const { dbml } = useERDStore();
+  const environment = useEnvironmentStore((s) => s.environment);
+  const { apiKeys } = useIntegrationStore();
+
+  const {
+    isGenerating,
+    generationProgress,
+    generationError,
+    generatedFiles,
+    startGeneration,
+    setGenerationProgress,
+    setGeneratedFiles,
+    setGenerationError,
+    finishGeneration,
+    approveAllFiles,
+    getApprovedFiles,
+    markTaskCommitted,
+    getTaskStatus,
+    markTaskSkipped,
+    markManualTaskComplete,
+  } = useExecutionStore();
+
+  const taskStatus = getTaskStatus(taskId);
+
+  if (!task) {
+    return null;
+  }
+
+  const handleGenerateCode = async () => {
+    startGeneration(taskId);
+
+    const result = await generateCodeForTask({
+      task,
+      projectName: environment?.projectName || 'project',
+      entities,
+      relationships,
+      dbml: dbml || '',
+      onProgress: (progress, message) => {
+        setGenerationProgress(progress);
+        console.log(`[${progress}%] ${message}`);
+      },
+    });
+
+    if (result.success) {
+      setGeneratedFiles(
+        result.files.map((f) => ({
+          path: f.path,
+          content: f.content,
+          language: f.language,
+          taskId,
+          status: 'pending' as const,
+        }))
+      );
+      finishGeneration();
+      toast.success(`Generated ${result.files.length} file(s)`);
+    } else {
+      setGenerationError(result.error || 'Failed to generate code');
+      toast.error(result.error || 'Code generation failed');
+    }
+  };
+
+  const handleApproveAll = () => {
+    approveAllFiles();
+    toast.success('All files approved - commit enabled in 10s');
+    startCommitCooldown();
+  };
+
+  const handleCommitToGitHub = async () => {
+    const approvedFiles = getApprovedFiles();
+
+    if (approvedFiles.length === 0) {
+      toast.error('No approved files to commit');
+      return;
+    }
+
+    if (!environment?.github || !apiKeys.github) {
+      toast.error('GitHub not configured');
+      return;
+    }
+
+    setIsCommitting(true);
+    setCommitProgress(10);
+
+    try {
+      // Convert to environment file format
+      const filesToPush: EnvironmentGeneratedFile[] = approvedFiles.map((f) => ({
+        path: f.path,
+        content: f.content,
+      }));
+
+      setCommitProgress(30);
+
+      await pushFilesToRepo(
+        apiKeys.github,
+        environment.github.owner,
+        environment.github.repoName,
+        filesToPush,
+        `feat(${task.module}): ${task.title}
+
+Task ID: ${taskId}
+Generated by PRD-to-Tasks`,
+        environment.github.defaultBranch
+      );
+
+      setCommitProgress(100);
+      markTaskCommitted(taskId);
+      toast.success('Code committed to GitHub');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Commit failed';
+      toast.error(message);
+    } finally {
+      setIsCommitting(false);
+      setCommitProgress(0);
+    }
+  };
+
+  // Handle marking skip task as done
+  const handleMarkSkipped = () => {
+    markTaskSkipped(taskId);
+    toast.success('Task marked as skipped');
+  };
+
+  // Handle marking manual task as complete
+  const handleMarkManualComplete = () => {
+    markManualTaskComplete(taskId);
+    toast.success('Manual task marked as complete');
+  };
+
+  const renderStatusBadge = (status: TaskExecutionStatus) => {
+    switch (status) {
+      case 'committed':
+        return (
+          <div className="flex items-center gap-2 text-green-500">
+            <CheckCircle2 className="h-4 w-4" />
+            <span className="text-sm font-medium">Committed</span>
+          </div>
+        );
+      case 'error':
+        return (
+          <div className="flex items-center gap-2 text-red-500">
+            <XCircle className="h-4 w-4" />
+            <span className="text-sm font-medium">Error</span>
+          </div>
+        );
+      case 'review':
+        return (
+          <div className="flex items-center gap-2 text-yellow-500">
+            <Check className="h-4 w-4" />
+            <span className="text-sm font-medium">Review</span>
+          </div>
+        );
+      case 'skipped':
+        return (
+          <div className="flex items-center gap-2 text-gray-400">
+            <SkipForward className="h-4 w-4" />
+            <span className="text-sm font-medium">Skipped (Already Done)</span>
+          </div>
+        );
+      case 'manual-pending':
+        return (
+          <div className="flex items-center gap-2 text-orange-500">
+            <User className="h-4 w-4" />
+            <span className="text-sm font-medium">Manual Task - Awaiting User</span>
+          </div>
+        );
+      case 'manual-complete':
+        return (
+          <div className="flex items-center gap-2 text-green-500">
+            <CheckCircle2 className="h-4 w-4" />
+            <span className="text-sm font-medium">Manual Task Complete</span>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const approvedCount = generatedFiles.filter((f) => f.status === 'approved').length;
+  const pendingCount = generatedFiles.filter((f) => f.status === 'pending').length;
+  const hasApprovedFiles = approvedCount > 0;
+  const allApproved = generatedFiles.length > 0 && pendingCount === 0;
+
+  // Check if task is a skip or manual task
+  const isSkipTask = task.executionMode === 'skip';
+  const isManualTask = task.executionMode === 'manual';
+  // Code generation is the default execution mode
+
+  // For skip tasks - show a simple "Mark as Verified" UI
+  if (isSkipTask) {
+    return (
+      <div className="space-y-3 p-3 border-t bg-muted/30">
+        {/* Status */}
+        <div className="flex justify-between items-center">
+          {renderStatusBadge(taskStatus)}
+        </div>
+
+        {/* Skip Task Info */}
+        <Alert className="py-2 bg-gray-50 border-gray-200">
+          <SkipForward className="h-4 w-4" />
+          <AlertDescription className="text-sm ml-2">
+            This task was already completed during environment setup. Just verify it works and mark as done.
+          </AlertDescription>
+        </Alert>
+
+        {/* Action Buttons */}
+        {taskStatus !== 'skipped' && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              onClick={handleMarkSkipped}
+            >
+              <CheckCircle2 className="h-4 w-4 mr-1" />
+              Mark as Verified
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // For manual tasks - show "Mark Complete" UI
+  if (isManualTask) {
+    return (
+      <div className="space-y-3 p-3 border-t bg-muted/30">
+        {/* Status */}
+        <div className="flex justify-between items-center">
+          {renderStatusBadge(taskStatus)}
+        </div>
+
+        {/* Manual Task Info */}
+        <Alert className="py-2 bg-orange-50 border-orange-200">
+          <AlertTriangle className="h-4 w-4 text-orange-500" />
+          <AlertDescription className="text-sm ml-2">
+            <strong>Manual Task:</strong> This task requires you to perform actions manually.
+            {task.notes && <div className="mt-1 text-xs">{task.notes}</div>}
+          </AlertDescription>
+        </Alert>
+
+        {/* Action Buttons */}
+        {taskStatus !== 'manual-complete' && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              onClick={handleMarkManualComplete}
+            >
+              <CheckCircle2 className="h-4 w-4 mr-1" />
+              Mark Complete
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // For code generation tasks - show the full generate/approve/commit UI
+  return (
+    <div className="space-y-3 p-3 border-t bg-muted/30">
+      {/* Status */}
+      {taskStatus !== 'pending' && taskStatus !== 'generating' && (
+        <div className="flex justify-between items-center">
+          {renderStatusBadge(taskStatus)}
+        </div>
+      )}
+
+      {/* Generation Progress */}
+      {isGenerating && (
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span>Generating code...</span>
+            <span>{generationProgress}%</span>
+          </div>
+          <Progress value={generationProgress} />
+        </div>
+      )}
+
+      {/* Error */}
+      {generationError && (
+        <Alert variant="destructive" className="py-2">
+          <AlertDescription className="text-sm">{generationError}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Commit Progress */}
+      {isCommitting && (
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span>Committing to GitHub...</span>
+            <span>{commitProgress}%</span>
+          </div>
+          <Progress value={commitProgress} />
+        </div>
+      )}
+
+      {/* File Status Summary */}
+      {generatedFiles.length > 0 && !isGenerating && taskStatus !== 'committed' && (
+        <div className="text-sm text-muted-foreground">
+          {approvedCount} of {generatedFiles.length} file(s) approved
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-2">
+        {/* Generate / Regenerate */}
+        {taskStatus !== 'committed' && (
+          <Button
+            size="sm"
+            variant={generatedFiles.length > 0 ? 'outline' : 'default'}
+            onClick={handleGenerateCode}
+            disabled={isGenerating || isCommitting}
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                Generating...
+              </>
+            ) : generatedFiles.length > 0 ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Regenerate
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4 mr-1" />
+                Generate Code
+              </>
+            )}
+          </Button>
+        )}
+
+        {/* Approve All */}
+        {generatedFiles.length > 0 && pendingCount > 0 && taskStatus !== 'committed' && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleApproveAll}
+            disabled={isGenerating || isCommitting}
+          >
+            <Check className="h-4 w-4 mr-1" />
+            Approve All
+          </Button>
+        )}
+
+        {/* Commit to GitHub */}
+        {hasApprovedFiles && taskStatus !== 'committed' && (
+          <Button
+            size="sm"
+            variant={allApproved && commitCooldown === 0 ? 'default' : 'outline'}
+            onClick={handleCommitToGitHub}
+            disabled={isGenerating || isCommitting || !environment?.github || commitCooldown > 0}
+          >
+            {isCommitting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                Committing...
+              </>
+            ) : commitCooldown > 0 ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                Wait {commitCooldown}s...
+              </>
+            ) : (
+              <>
+                <GitCommitHorizontal className="h-4 w-4 mr-1" />
+                Commit to GitHub
+              </>
+            )}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -28,8 +28,11 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { fetchOpenRouterModels, clearOpenRouterCache, type OpenRouterModel } from '@/lib/openrouter';
 import { usePromptStore } from '@/store/promptStore';
+import { useIntegrationStore } from '@/store/integrationStore';
 import { PROMPT_METADATA, type PromptKey } from '@/core/llm/prompts/default-prompts';
 import { PromptEditorDialog } from '@/components/settings/PromptEditorDialog';
+import { testNeonConnection } from '@/core/environment/neon-client';
+import { testGitHubConnection } from '@/core/environment/github-client';
 
 interface SettingsModalProps {
   open: boolean;
@@ -55,8 +58,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const previewArchitectureRecommendations = useSettingsStore((s) => s.advanced.previewArchitectureRecommendations);
   const updateAdvanced = useSettingsStore((s) => s.updateAdvanced);
 
+  // Integration store
+  const integrationApiKeys = useIntegrationStore((s) => s.apiKeys);
+  const setIntegrationApiKey = useIntegrationStore((s) => s.setApiKey);
+
   // Ensure settingsTab has a valid value
-  const validTabs = ['api-keys', 'models', 'prompts', 'standards', 'appearance', 'advanced'];
+  const validTabs = ['api-keys', 'models', 'prompts', 'integrations', 'standards', 'appearance', 'advanced'];
   const currentTab = validTabs.includes(settingsTab) ? settingsTab : 'api-keys';
 
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -68,6 +75,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [keyStatus, setKeyStatus] = useState<Record<string, 'valid' | 'invalid' | null>>({});
   const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModel[]>([]);
   const [isLoadingOpenRouter, setIsLoadingOpenRouter] = useState(false);
+  const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
+  const [integrationStatus, setIntegrationStatus] = useState<Record<string, 'valid' | 'invalid' | null>>({});
 
   // Load OpenRouter models on mount and when modal opens
   const loadOpenRouterModels = useCallback(async (forceRefresh = false) => {
@@ -126,6 +135,33 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     setShowKeys((s) => ({ ...s, [provider]: !s[provider] }));
   };
 
+  const handleTestIntegration = async (provider: 'neon' | 'github' | 'gitpod') => {
+    const key = integrationApiKeys[provider];
+    if (!key) return;
+
+    setTestingIntegration(provider);
+    let isValid = false;
+
+    try {
+      if (provider === 'neon') {
+        isValid = await testNeonConnection(key);
+      } else if (provider === 'github') {
+        isValid = await testGitHubConnection(key);
+      } else if (provider === 'gitpod') {
+        // Gitpod doesn't need validation - just check it's not empty
+        isValid = key.length > 0;
+      }
+    } catch {
+      isValid = false;
+    }
+
+    setIntegrationStatus((s) => ({ ...s, [provider]: isValid ? 'valid' : 'invalid' }));
+    setTestingIntegration(null);
+    toast[isValid ? 'success' : 'error'](
+      isValid ? `${provider.charAt(0).toUpperCase() + provider.slice(1)} connection valid` : `${provider.charAt(0).toUpperCase() + provider.slice(1)} connection failed`
+    );
+  };
+
   return (
   <>
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
@@ -146,6 +182,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             <TabsTrigger value="api-keys">API Keys</TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
             <TabsTrigger value="prompts">Prompts</TabsTrigger>
+            <TabsTrigger value="integrations">Integrations</TabsTrigger>
             <TabsTrigger value="standards">Standards</TabsTrigger>
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
             <TabsTrigger value="advanced">Advanced</TabsTrigger>
@@ -447,6 +484,207 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               </div>
 
 
+            </TabsContent>
+
+            {/* Integrations Tab */}
+            <TabsContent value="integrations" className="mt-0 space-y-4">
+              <div className="space-y-1 mb-4">
+                <p className="text-sm text-muted-foreground">
+                  Configure cloud service integrations for the Execute phase (Phase 5).
+                  These services are used to create your development environment.
+                </p>
+              </div>
+
+              {/* Neon */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    Neon (PostgreSQL)
+                    <a
+                      href="https://console.neon.tech/app/settings/api-keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </Label>
+                  {integrationStatus.neon && (
+                    <Badge
+                      variant={integrationStatus.neon === 'valid' ? 'default' : 'destructive'}
+                      className={cn(
+                        integrationStatus.neon === 'valid' && 'bg-green-500'
+                      )}
+                    >
+                      {integrationStatus.neon === 'valid' ? (
+                        <Check className="h-3 w-3 mr-1" />
+                      ) : (
+                        <X className="h-3 w-3 mr-1" />
+                      )}
+                      {integrationStatus.neon}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      type={showKeys.neon ? 'text' : 'password'}
+                      placeholder="Enter Neon API key"
+                      value={integrationApiKeys.neon || ''}
+                      onChange={(e) => {
+                        setIntegrationApiKey('neon', e.target.value);
+                        setIntegrationStatus((s) => ({ ...s, neon: null }));
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                      onClick={() => toggleShowKey('neon')}
+                    >
+                      {showKeys.neon ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!integrationApiKeys.neon || testingIntegration === 'neon'}
+                    onClick={() => handleTestIntegration('neon')}
+                  >
+                    {testingIntegration === 'neon' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Test'
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Used to create a PostgreSQL database for your project.
+                </p>
+              </div>
+
+              {/* GitHub */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    GitHub Token
+                    <a
+                      href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=PRD-to-Tasks"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </Label>
+                  {integrationStatus.github && (
+                    <Badge
+                      variant={integrationStatus.github === 'valid' ? 'default' : 'destructive'}
+                      className={cn(
+                        integrationStatus.github === 'valid' && 'bg-green-500'
+                      )}
+                    >
+                      {integrationStatus.github === 'valid' ? (
+                        <Check className="h-3 w-3 mr-1" />
+                      ) : (
+                        <X className="h-3 w-3 mr-1" />
+                      )}
+                      {integrationStatus.github}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      type={showKeys.github ? 'text' : 'password'}
+                      placeholder="Enter GitHub personal access token"
+                      value={integrationApiKeys.github || ''}
+                      onChange={(e) => {
+                        setIntegrationApiKey('github', e.target.value);
+                        setIntegrationStatus((s) => ({ ...s, github: null }));
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                      onClick={() => toggleShowKey('github')}
+                    >
+                      {showKeys.github ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!integrationApiKeys.github || testingIntegration === 'github'}
+                    onClick={() => handleTestIntegration('github')}
+                  >
+                    {testingIntegration === 'github' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Test'
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Used to create a repository and push the generated scaffold. Requires repo and workflow scopes.
+                </p>
+              </div>
+
+              {/* Gitpod */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    Gitpod Token (Optional)
+                    <a
+                      href="https://gitpod.io/user/tokens"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </Label>
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      type={showKeys.gitpod ? 'text' : 'password'}
+                      placeholder="Enter Gitpod access token (optional)"
+                      value={integrationApiKeys.gitpod || ''}
+                      onChange={(e) => {
+                        setIntegrationApiKey('gitpod', e.target.value);
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                      onClick={() => toggleShowKey('gitpod')}
+                    >
+                      {showKeys.gitpod ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Optional. Gitpod workspaces can be opened without an API token.
+                </p>
+              </div>
             </TabsContent>
 
             {/* Standards Tab */}

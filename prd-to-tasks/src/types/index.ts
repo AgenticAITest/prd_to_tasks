@@ -7,6 +7,7 @@ export * from './task';
 export * from './analysis';
 export * from './llm';
 export * from './settings';
+export * from './environment';
 
 // Re-export commonly used types for convenience
 export type {
@@ -50,3 +51,16 @@ export type {
   AppSettings,
   StandardsConfig,
 } from './settings';
+
+export type {
+  EnvironmentStatus,
+  Environment,
+  NeonEnvironment,
+  GitHubEnvironment,
+  GitpodEnvironment,
+  IntegrationAPIKeys,
+  GeneratedFile,
+  ScaffoldContext,
+  EnvironmentCreationProgress,
+  EnvironmentCreationStep,
+} from './environment';
