@@ -125,16 +125,8 @@ export function generateTasks(
     // API client setup task (one per project)
     tasks.push(generateAPIClientTask(context));
 
-    // E2E flow tasks (one per functional requirement)
-    context.prd.functionalRequirements.forEach((fr) => {
-      tasks.push(generateE2EFlowTask(fr, context));
-    });
-
-    // Test setup task (one per project)
-    tasks.push(generateTestSetupTask(context));
-
-    // Assembly/Composition tasks (Phase 8-9 in typical workflow)
-    // Page composition tasks - one per unique route/screen combination
+    // Assembly/Composition tasks - must come BEFORE E2E tests
+    // First, collect unique screens
     const uniqueScreens = new Map<string, Screen>();
     context.prd.functionalRequirements.forEach((fr) => {
       fr.screens.forEach((screen) => {
@@ -143,15 +135,25 @@ export function generateTasks(
         }
       });
     });
-    uniqueScreens.forEach((screen) => {
-      tasks.push(generatePageCompositionTask(screen, context, tasks));
-    });
 
     // Route configuration task (one per project)
     tasks.push(generateRouteConfigTask(context, uniqueScreens));
 
     // Navigation task (one per project)
     tasks.push(generateNavigationTask(context, uniqueScreens));
+
+    // Page composition tasks - one per unique route/screen combination
+    uniqueScreens.forEach((screen) => {
+      tasks.push(generatePageCompositionTask(screen, context, tasks));
+    });
+
+    // E2E flow tasks (one per functional requirement) - AFTER pages are built
+    context.prd.functionalRequirements.forEach((fr) => {
+      tasks.push(generateE2EFlowTask(fr, context));
+    });
+
+    // Test setup task (one per project)
+    tasks.push(generateTestSetupTask(context));
   }
 
   // Resolve dependencies
@@ -222,8 +224,10 @@ function generateDatabaseMigrationTask(
       })),
   };
 
+  const taskId = generateTaskId();
+
   return {
-    id: generateTaskId(),
+    id: taskId,
     title: `Create database migration for ${entity.name}`,
     type: 'database-migration',
     tier: 'T1',
@@ -272,7 +276,7 @@ function generateDatabaseMigrationTask(
     ],
     testCases: [
       {
-        id: `TC-${generateTaskId()}-1`,
+        id: `TC-${taskId}-1`,
         name: 'Table creation',
         type: 'integration',
         given: 'Empty database',
@@ -281,7 +285,7 @@ function generateDatabaseMigrationTask(
         priority: 'high',
       },
       {
-        id: `TC-${generateTaskId()}-2`,
+        id: `TC-${taskId}-2`,
         name: 'Rollback',
         type: 'integration',
         given: 'Migration has been applied',
