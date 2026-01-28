@@ -172,8 +172,14 @@ export async function createGitHubRepo(
   };
 }
 
+// Track last successful commit time for cooldown
+let lastCommitTime = 0;
+const COMMIT_COOLDOWN_MS = 10000; // 10 seconds between commits
+const RETRY_DELAY_MS = 10000; // 10 seconds between retries
+
 /**
  * Push multiple files to a repository in a single commit
+ * Includes retry logic to handle race conditions when multiple commits happen concurrently
  */
 export async function pushFilesToRepo(
   token: string,
@@ -181,7 +187,53 @@ export async function pushFilesToRepo(
   repo: string,
   files: GeneratedFile[],
   commitMessage: string = 'Initial scaffold',
-  branch: string = 'main'
+  branch: string = 'main',
+  maxRetries: number = 3
+): Promise<void> {
+  // Enforce cooldown between commits to let GitHub propagate
+  const timeSinceLastCommit = Date.now() - lastCommitTime;
+  if (lastCommitTime > 0 && timeSinceLastCommit < COMMIT_COOLDOWN_MS) {
+    const waitTime = COMMIT_COOLDOWN_MS - timeSinceLastCommit;
+    console.log(`[GitHub] Waiting ${Math.ceil(waitTime / 1000)}s for commit cooldown...`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      await pushFilesToRepoOnce(token, owner, repo, files, commitMessage, branch);
+      lastCommitTime = Date.now(); // Record successful commit time
+      return; // Success
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Only retry on branch reference update failures (race condition)
+      if (!lastError.message.includes('Failed to update branch reference')) {
+        throw lastError;
+      }
+
+      // Wait 10 seconds before retrying
+      if (attempt < maxRetries - 1) {
+        console.log(`[GitHub] Retry ${attempt + 1}/${maxRetries} after ${RETRY_DELAY_MS / 1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      }
+    }
+  }
+
+  throw lastError || new Error('Failed to push files after retries');
+}
+
+/**
+ * Internal function to push files in a single attempt
+ */
+async function pushFilesToRepoOnce(
+  token: string,
+  owner: string,
+  repo: string,
+  files: GeneratedFile[],
+  commitMessage: string,
+  branch: string
 ): Promise<void> {
   // Get the latest commit SHA for the branch
   const refResponse = await fetch(

@@ -16,7 +16,7 @@ import type { GeneratedFile as EnvironmentGeneratedFile } from '@/types/environm
 import type { ProgrammableTask } from '@/types/task';
 import { toast } from 'sonner';
 
-const DELAY_BETWEEN_TASKS = 1500; // 1.5 seconds between tasks
+const DELAY_BETWEEN_TASKS = 10000; // 10 seconds between tasks for GitHub propagation
 
 export function useAutoExecute() {
   const abortRef = useRef(false);

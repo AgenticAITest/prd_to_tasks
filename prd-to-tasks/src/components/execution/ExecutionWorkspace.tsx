@@ -14,6 +14,7 @@ import {
   AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
+import { Toaster } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { TaskListPanel } from './TaskListPanel';
@@ -219,6 +220,9 @@ export function ExecutionWorkspace() {
           <PreviewPanel />
         </div>
       </div>
+
+      {/* Toast notifications */}
+      <Toaster position="top-right" richColors />
     </div>
   );
 }
