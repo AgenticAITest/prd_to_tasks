@@ -25,6 +25,7 @@ const initialCustomPrompts: Record<PromptKey, string | null> = {
   entityExtraction: null,
   taskGeneration: null,
   erdGeneration: null,
+  copyPromptFooter: null,
 };
 
 export const usePromptStore = create<PromptState>()(
@@ -107,6 +108,7 @@ export const usePromptStore = create<PromptState>()(
             'entityExtraction',
             'taskGeneration',
             'erdGeneration',
+            'copyPromptFooter',
           ];
 
           const newCustomPrompts = { ...initialCustomPrompts };

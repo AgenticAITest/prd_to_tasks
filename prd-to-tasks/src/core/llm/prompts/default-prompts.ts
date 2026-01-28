@@ -11,12 +11,34 @@ import { ENTITY_EXTRACTION_SYSTEM_PROMPT } from './entity-extraction';
 import { TASK_GENERATION_SYSTEM_PROMPT } from './task-generation';
 import { ERD_GENERATION_SYSTEM_PROMPT } from './erd-generation';
 
+/**
+ * Default footer appended to all copied task prompts.
+ * This restricts AI coding assistants from going beyond the specified scope.
+ */
+export const COPY_PROMPT_FOOTER = `
+---
+
+## IMPORTANT: Scope Restriction
+
+**Do NOT do anything beyond what is explicitly specified above.**
+
+- Only implement the requirements listed in this task
+- Do not add extra features, utilities, or "nice-to-haves"
+- Do not refactor or modify code outside the scope of this task
+- Do not add comments, documentation, or type annotations beyond what is required
+- Do not "improve" or "clean up" surrounding code
+- If something is unclear, ask for clarification instead of assuming
+
+**Stay focused. Implement exactly what is specified, nothing more.**
+`;
+
 export type PromptKey =
   | 'prdAnalysis'
   | 'semanticAnalysis'
   | 'entityExtraction'
   | 'taskGeneration'
-  | 'erdGeneration';
+  | 'erdGeneration'
+  | 'copyPromptFooter';
 
 export interface PromptMetadata {
   key: PromptKey;
@@ -56,6 +78,12 @@ export const PROMPT_METADATA: PromptMetadata[] = [
     description: 'Generates detailed, self-contained development tasks from specifications',
     phase: 'Phase 4: Task Generator',
   },
+  {
+    key: 'copyPromptFooter',
+    name: 'Copy Prompt Footer',
+    description: 'Instructions appended to every copied task prompt (scope restrictions, guidelines)',
+    phase: 'Phase 4: Task Generator',
+  },
 ];
 
 export const DEFAULT_PROMPTS: Record<PromptKey, string> = {
@@ -64,6 +92,7 @@ export const DEFAULT_PROMPTS: Record<PromptKey, string> = {
   entityExtraction: ENTITY_EXTRACTION_SYSTEM_PROMPT,
   taskGeneration: TASK_GENERATION_SYSTEM_PROMPT,
   erdGeneration: ERD_GENERATION_SYSTEM_PROMPT,
+  copyPromptFooter: COPY_PROMPT_FOOTER,
 };
 
 export function getDefaultPrompt(key: PromptKey): string {

@@ -86,9 +86,11 @@ tasks:
 ports:
   - port: 3001
     onOpen: ignore
+    visibility: public
     name: Backend API
   - port: 5173
     onOpen: open-preview
+    visibility: public
     name: Frontend
 
 vscode:

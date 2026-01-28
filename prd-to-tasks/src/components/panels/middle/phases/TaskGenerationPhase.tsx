@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, Download, Filter, Search, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Play, Download, Filter, Search, RefreshCw, CheckCircle2, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,8 +16,14 @@ import {
 import { useTaskStore } from '@/store/taskStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useUIStore } from '@/store/uiStore';
+import { usePRDStore } from '@/store/prdStore';
+import { useEntityStore } from '@/store/entityStore';
+import { useERDStore } from '@/store/erdStore';
 import { cn } from '@/lib/utils';
-import type { TaskType, TaskTier, ProgrammableTask } from '@/types/task';
+import { generateTaskPrompt } from '@/lib/prompt-generator';
+import { generateTasks } from '@/core/task-generator';
+import { toast } from 'sonner';
+import type { TaskType, TaskTier } from '@/types/task';
 
 const TASK_TYPE_LABELS: Record<TaskType, string> = {
   'database-migration': 'Database',
@@ -33,8 +39,18 @@ const TASK_TYPE_LABELS: Record<TaskType, string> = {
   'business-logic': 'Business Logic',
   'workflow': 'Workflow',
   'integration': 'Integration',
-  'test': 'Test',
-  'documentation': 'Documentation',
+  'test': 'Test (Manual)',
+  'documentation': 'Docs (Manual)',
+  // Integration/orchestration task types
+  'environment-setup': 'Env Setup',
+  'service-layer': 'Service Layer',
+  'api-client': 'API Client',
+  'e2e-flow': 'E2E (Manual)',
+  'test-setup': 'Test Setup',
+  // Assembly/composition task types
+  'page-composition': 'Page',
+  'route-config': 'Routing',
+  'navigation': 'Navigation',
 };
 
 const TIER_COLORS: Record<TaskTier, string> = {
@@ -47,6 +63,7 @@ const TIER_COLORS: Record<TaskTier, string> = {
 export function TaskGenerationPhase() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [tierFilter, setTierFilter] = useState<string>('all');
+  const [promptCopied, setPromptCopied] = useState(false);
 
   const {
     tasks,
@@ -63,6 +80,9 @@ export function TaskGenerationPhase() {
   } = useTaskStore();
   const { setPhaseStatus } = useProjectStore();
   const { openModal } = useUIStore();
+  const { prd } = usePRDStore();
+  const { entities, relationships } = useEntityStore();
+  const { dbml } = useERDStore();
 
   const filteredTasks = getFilteredTasks().filter((task) => {
     if (typeFilter !== 'all' && task.type !== typeFilter) return false;
@@ -73,153 +93,70 @@ export function TaskGenerationPhase() {
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
 
   const handleGenerate = async () => {
-    setGenerating(true, 0);
-
-    // Simulate task generation
-    for (let i = 0; i <= 100; i += 5) {
-      await new Promise((r) => setTimeout(r, 100));
-      setGenerating(true, i);
+    // Validate that we have the required data from previous phases
+    if (!prd) {
+      toast.error('No PRD data available. Please complete Phase 1 first.');
+      return;
     }
 
-    // Generate sample tasks
-    const sampleTasks: ProgrammableTask[] = [
-      {
-        id: 'TASK-001',
-        title: 'Create users table migration',
-        type: 'database-migration',
-        tier: 'T1',
-        module: 'auth',
-        priority: 'critical',
-        dependencies: [],
-        dependents: ['TASK-002'],
-        specification: {
-          objective: 'Create the users table with all required fields',
-          context: 'Foundation for user authentication and management',
-          requirements: [
-            'Create users table with id, email, password_hash, name fields',
-            'Add unique constraint on email',
-            'Add created_at and updated_at timestamps',
-            'Add soft delete support with deleted_at field',
-          ],
-        },
-        acceptanceCriteria: [
-          'Migration runs successfully',
-          'Table is created with correct schema',
-          'Indexes are created for performance',
-        ],
-        estimatedComplexity: 'simple',
-        tags: ['database', 'auth', 'users'],
-      },
-      {
-        id: 'TASK-002',
-        title: 'Implement User CRUD API endpoints',
-        type: 'api-crud',
-        tier: 'T2',
-        module: 'auth',
-        priority: 'high',
-        dependencies: ['TASK-001'],
-        dependents: ['TASK-003'],
-        specification: {
-          objective: 'Create RESTful API endpoints for user management',
-          context: 'Provides API layer for user operations',
-          requirements: [
-            'GET /api/v1/users - List users with pagination',
-            'GET /api/v1/users/:id - Get user by ID',
-            'POST /api/v1/users - Create new user',
-            'PUT /api/v1/users/:id - Update user',
-            'DELETE /api/v1/users/:id - Soft delete user',
-          ],
-        },
-        acceptanceCriteria: [
-          'All endpoints return correct status codes',
-          'Validation errors are handled properly',
-          'Pagination works correctly',
-        ],
-        estimatedComplexity: 'moderate',
-        tags: ['api', 'auth', 'users'],
-      },
-      {
-        id: 'TASK-003',
-        title: 'Build User List UI component',
-        type: 'ui-list',
-        tier: 'T2',
-        module: 'auth',
-        priority: 'medium',
-        dependencies: ['TASK-002'],
-        dependents: [],
-        specification: {
-          objective: 'Create a data table component for displaying users',
-          context: 'Admin interface for user management',
-          requirements: [
-            'Display users in a sortable, filterable table',
-            'Include columns: Name, Email, Status, Created Date, Actions',
-            'Add pagination controls',
-            'Include search functionality',
-          ],
-        },
-        acceptanceCriteria: [
-          'Table displays user data correctly',
-          'Sorting works on all sortable columns',
-          'Filtering and search work as expected',
-        ],
-        estimatedComplexity: 'moderate',
-        tags: ['ui', 'auth', 'users'],
-      },
-    ];
+    if (entities.length === 0) {
+      toast.error('No entities extracted. Please complete Phase 2 first.');
+      return;
+    }
 
-    setTaskSet({
-      id: 'taskset-1',
-      projectName: 'Sample Project',
-      moduleName: 'auth',
-      version: '1.0.0',
-      generatedAt: new Date(),
-      tasks: sampleTasks,
-      summary: {
-        totalTasks: sampleTasks.length,
-        byType: {
-          'database-migration': 1,
-          'api-crud': 1,
-          'api-custom': 0,
-          'ui-list': 1,
-          'ui-form': 0,
-          'ui-detail': 0,
-          'ui-modal': 0,
-          'ui-dashboard': 0,
-          'ui-report': 0,
-          'validation': 0,
-          'business-logic': 0,
-          'workflow': 0,
-          'integration': 0,
-          'test': 0,
-          'documentation': 0,
-        },
-        byTier: { T1: 1, T2: 2, T3: 0, T4: 0 },
-        byModule: { auth: 3 },
-        byPriority: { critical: 1, high: 1, medium: 1, low: 0 },
-        criticalPath: ['TASK-001', 'TASK-002', 'TASK-003'],
-        estimatedComplexity: {
-          trivial: 0,
-          simple: 1,
-          moderate: 2,
-          complex: 0,
-          veryComplex: 0,
-        },
-      },
-      metadata: {
-        generatorVersion: '1.0.0',
-        prdId: 'prd-1',
-        erdId: 'erd-1',
-        standardsApplied: ['database', 'api'],
-        exportFormats: ['json', 'yaml', 'markdown'],
-      },
-    });
+    setGenerating(true, 0);
 
-    setGenerating(false);
-    setPhaseStatus(4, 'completed');
+    try {
+      // Show progress
+      setGenerating(true, 20);
+
+      // Build the context for task generation
+      const context = {
+        prd,
+        entities,
+        relationships,
+        dbml: dbml || '',
+      };
+
+      setGenerating(true, 50);
+
+      // Call the actual task generator
+      const taskSet = generateTasks(context);
+
+      setGenerating(true, 90);
+
+      // Set the generated task set
+      console.log('[TaskGenerationPhase] Setting taskSet with', taskSet.tasks.length, 'tasks');
+      setTaskSet(taskSet);
+
+      // Verify it was set by checking localStorage after a brief delay
+      setTimeout(() => {
+        const stored = localStorage.getItem('prd-to-tasks-tasks');
+        console.log('[TaskGenerationPhase] After setTaskSet, localStorage:', stored ? JSON.parse(stored) : 'not found');
+      }, 100);
+
+      setGenerating(false);
+      setPhaseStatus(4, 'completed');
+      toast.success(`Generated ${taskSet.tasks.length} tasks successfully`);
+    } catch (error) {
+      console.error('Task generation failed:', error);
+      setGenerating(false);
+      toast.error('Failed to generate tasks. Please try again.');
+    }
   };
 
   const handleExport = () => {
     openModal('export');
+  };
+
+  const handleCopyPrompt = async () => {
+    if (!selectedTask) return;
+
+    const prompt = generateTaskPrompt(selectedTask);
+    await navigator.clipboard.writeText(prompt);
+    setPromptCopied(true);
+    toast.success('Prompt copied to clipboard');
+    setTimeout(() => setPromptCopied(false), 2000);
   };
 
   return (
@@ -410,9 +347,24 @@ export function TaskGenerationPhase() {
             {selectedTask ? (
               <>
                 <CardHeader className="py-3">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">{selectedTask.id}</Badge>
-                    <CardTitle className="text-base">{selectedTask.title}</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{selectedTask.id}</Badge>
+                      <CardTitle className="text-base">{selectedTask.title}</CardTitle>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCopyPrompt}
+                      className="shrink-0"
+                    >
+                      {promptCopied ? (
+                        <Check className="h-4 w-4 mr-1" />
+                      ) : (
+                        <Copy className="h-4 w-4 mr-1" />
+                      )}
+                      {promptCopied ? 'Copied' : 'Copy Prompt'}
+                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent>

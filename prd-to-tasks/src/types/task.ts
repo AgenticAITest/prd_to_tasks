@@ -38,7 +38,18 @@ export interface ProgrammableTask {
 
   // Status tracking (optional, for UI)
   status?: 'pending' | 'in-progress' | 'completed' | 'blocked';
+
+  // Execution mode - determines how task is handled in Execution Workspace
+  executionMode: TaskExecutionMode;
 }
+
+/**
+ * Execution mode determines how a task is handled:
+ * - 'code-generation': AI generates code, human reviews and approves
+ * - 'manual': Human must perform this task manually (testing, documentation)
+ * - 'skip': Already scaffolded/done during environment setup
+ */
+export type TaskExecutionMode = 'code-generation' | 'manual' | 'skip';
 
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low';
 
@@ -58,6 +69,16 @@ export type TaskType =
   | 'integration'
   | 'test'
   | 'documentation'
+  // Integration/orchestration task types
+  | 'environment-setup'
+  | 'service-layer'
+  | 'api-client'
+  | 'e2e-flow'
+  | 'test-setup'
+  // Assembly/composition task types
+  | 'page-composition'
+  | 'route-config'
+  | 'navigation'
 
 export type TaskTier =
   | 'T1'    // Simple, repetitive (junior dev / AI)
@@ -87,6 +108,18 @@ export interface TaskSpecification {
 
   // For workflow tasks
   workflow?: WorkflowTaskSpec | WorkflowSpecification;
+
+  // For integration/orchestration tasks
+  environmentSetup?: EnvironmentSetupSpec;
+  serviceLayer?: ServiceLayerSpec;
+  apiClient?: APIClientSpec;
+  e2eFlow?: E2EFlowSpec;
+  testSetup?: TestSetupSpec;
+
+  // For assembly/composition tasks
+  pageComposition?: PageCompositionSpec;
+  routeConfig?: RouteConfigSpec;
+  navigation?: NavigationSpec;
 
   // Technical notes
   technicalNotes?: string[];
@@ -259,6 +292,188 @@ export interface FieldSpec {
   description: string;
   validation?: string[];
   example?: string;
+}
+
+// Integration/Orchestration Task Specifications
+
+export interface EnvironmentSetupSpec {
+  components: {
+    name: string;
+    type: 'database' | 'api-server' | 'frontend' | 'cache' | 'queue' | 'other';
+    technology: string;
+    configuration: Record<string, string>;
+    port?: number;
+    envVariables: { name: string; description: string; example: string }[];
+  }[];
+  dependencies: {
+    name: string;
+    version: string;
+    installCommand: string;
+  }[];
+  setupSteps: string[];
+  verificationSteps: string[];
+}
+
+export interface ServiceLayerSpec {
+  entityName: string;
+  serviceName: string;
+  repositoryName: string;
+  methods: {
+    name: string;
+    description: string;
+    input: { name: string; type: string }[];
+    output: string;
+    dbOperations: string[];
+    businessLogic?: string[];
+  }[];
+  dependencies: string[];
+  transactionBoundaries?: string[];
+}
+
+export interface APIClientSpec {
+  baseUrl: string;
+  authMethod: 'bearer' | 'api-key' | 'session' | 'none';
+  endpoints: {
+    name: string;
+    method: string;
+    path: string;
+    requestType?: string;
+    responseType: string;
+    errorHandling: string;
+  }[];
+  stateManagement: {
+    library: string;
+    stores: { name: string; purpose: string }[];
+  };
+  errorHandlingStrategy: string;
+  retryPolicy?: string;
+}
+
+export interface E2EFlowSpec {
+  flowName: string;
+  description: string;
+  actors: string[];
+  preconditions: string[];
+  steps: {
+    stepNumber: number;
+    action: string;
+    screen?: string;
+    api?: string;
+    expectedResult: string;
+    dataRequired?: string[];
+  }[];
+  postconditions: string[];
+  alternativeFlows?: {
+    name: string;
+    triggerCondition: string;
+    steps: string[];
+  }[];
+}
+
+export interface TestSetupSpec {
+  testType: 'unit' | 'integration' | 'e2e' | 'all';
+  prerequisites: {
+    component: string;
+    requirement: string;
+    setupCommand?: string;
+  }[];
+  testDatabase: {
+    type: string;
+    setupScript?: string;
+    seedDataRequired: boolean;
+    seedEntities?: string[];
+  };
+  mockServices: {
+    service: string;
+    mockStrategy: string;
+    mockData?: string;
+  }[];
+  environmentVariables: { name: string; value: string }[];
+  runCommands: {
+    type: string;
+    command: string;
+    description: string;
+  }[];
+}
+
+// Assembly/Composition Task Specifications
+
+export interface PageCompositionSpec {
+  pageName: string;
+  route: string;
+  description: string;
+  layout: {
+    type: 'single-column' | 'two-column' | 'dashboard' | 'form-page' | 'list-page';
+    template?: string;
+  };
+  components: {
+    name: string;
+    taskId: string; // Reference to the UI task that created this component
+    position: string; // e.g., 'header', 'main', 'sidebar', 'footer'
+    props?: Record<string, string>;
+  }[];
+  dataFetching: {
+    onMount?: string[]; // API calls to make when page loads
+    prefetch?: string[]; // Data to prefetch
+  };
+  stateConnections: {
+    store: string;
+    selectors: string[];
+  }[];
+  pageActions: {
+    name: string;
+    handler: string;
+    description: string;
+  }[];
+}
+
+export interface RouteConfigSpec {
+  routerType: 'react-router' | 'next' | 'tanstack-router' | 'other';
+  routes: {
+    path: string;
+    component: string;
+    pageName: string;
+    isProtected: boolean;
+    requiredRoles?: string[];
+    layoutWrapper?: string;
+    children?: {
+      path: string;
+      component: string;
+    }[];
+  }[];
+  guards: {
+    name: string;
+    type: 'auth' | 'role' | 'custom';
+    condition: string;
+    redirectTo: string;
+  }[];
+  defaultRoute: string;
+  notFoundRoute: string;
+}
+
+export interface NavigationSpec {
+  navigationType: 'sidebar' | 'topbar' | 'both';
+  menuItems: {
+    label: string;
+    icon?: string;
+    route: string;
+    requiredRoles?: string[];
+    children?: {
+      label: string;
+      route: string;
+    }[];
+  }[];
+  userMenu?: {
+    items: { label: string; action: string }[];
+  };
+  breadcrumbs: {
+    enabled: boolean;
+    routes: { path: string; label: string }[];
+  };
+  mobileNavigation?: {
+    type: 'drawer' | 'bottom-tabs';
+    breakpoint: string;
+  };
 }
 
 export interface TestCase {

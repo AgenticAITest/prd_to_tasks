@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type {
   Environment,
   EnvironmentStatus,
@@ -43,7 +44,9 @@ interface EnvironmentState {
   clearEnvironment: () => void;
 }
 
-export const useEnvironmentStore = create<EnvironmentState>()((set) => ({
+export const useEnvironmentStore = create<EnvironmentState>()(
+  persist(
+    (set) => ({
   // Initial state
   environment: null,
   isCreating: false,
@@ -155,4 +158,23 @@ export const useEnvironmentStore = create<EnvironmentState>()((set) => ({
       isExecutionMode: false,
     });
   },
-}));
+}),
+    {
+      name: 'prd-to-tasks-environment',
+      partialize: (state) => ({
+        environment: state.environment,
+        isExecutionMode: state.isExecutionMode,
+      }),
+      onRehydrateStorage: () => {
+        console.log('[environmentStore] Starting hydration from localStorage...');
+        return (state, error) => {
+          if (error) {
+            console.error('[environmentStore] Hydration error:', error);
+          } else {
+            console.log('[environmentStore] Hydration complete. isExecutionMode:', state?.isExecutionMode);
+          }
+        };
+      },
+    }
+  )
+);

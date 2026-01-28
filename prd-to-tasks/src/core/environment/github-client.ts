@@ -88,7 +88,39 @@ export async function getGitHubUser(token: string): Promise<GitHubUser> {
 }
 
 /**
- * Create a new GitHub repository
+ * Get an existing GitHub repository
+ */
+export async function getGitHubRepo(
+  token: string,
+  owner: string,
+  repoName: string
+): Promise<GitHubEnvironment | null> {
+  const response = await fetch(githubUrl(`/repos/${owner}/${repoName}`), {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const repo: GitHubRepo = await response.json();
+
+  return {
+    repoName: repo.name,
+    repoUrl: repo.html_url,
+    cloneUrl: repo.clone_url,
+    owner: repo.owner.login,
+    defaultBranch: repo.default_branch,
+  };
+}
+
+/**
+ * Create a new GitHub repository, or return existing one if it already exists
  */
 export async function createGitHubRepo(
   token: string,
@@ -96,6 +128,17 @@ export async function createGitHubRepo(
   description: string = '',
   isPrivate: boolean = true
 ): Promise<GitHubEnvironment> {
+  // First, get the current user to check for existing repo
+  const user = await getGitHubUser(token);
+
+  // Check if repo already exists
+  const existingRepo = await getGitHubRepo(token, user.login, repoName);
+  if (existingRepo) {
+    console.log(`Repository ${repoName} already exists, using existing repo`);
+    return existingRepo;
+  }
+
+  // Create new repo
   const response = await fetch(githubUrl('/user/repos'), {
     method: 'POST',
     headers: {
