@@ -105,7 +105,9 @@ function validateAndNormalizeResult(
   const completeness = parsed.completeness as Record<string, unknown> | undefined;
   const gaps = parsed.gaps as Record<string, unknown> | undefined;
   const conflicts = parsed.conflicts as Record<string, unknown> | undefined;
+  const workflowIntegrity = parsed.workflowIntegrity as Record<string, unknown> | undefined;
   const entityReadiness = parsed.entityReadiness as Record<string, unknown> | undefined;
+  const ambiguityDetection = parsed.ambiguityDetection as Record<string, unknown> | undefined;
   const overallAssessment = parsed.overallAssessment as Record<string, unknown> | undefined;
 
   return {
@@ -119,8 +121,14 @@ function validateAndNormalizeResult(
       undefinedEntities: (gaps?.undefinedEntities as string[]) ?? [],
       incompleteWorkflows: (gaps?.incompleteWorkflows as string[]) ?? [],
       missingValidations: (gaps?.missingValidations as string[]) ?? [],
+      functionalGaps: (gaps?.functionalGaps as string[]) ?? [],
     },
     conflicts: {
+      duplicateIds: (conflicts?.duplicateIds as Array<{
+        id: string;
+        occurrences: string[];
+        description: string;
+      }>) ?? [],
       requirementConflicts: (conflicts?.requirementConflicts as Array<{
         fr1: string;
         fr2: string;
@@ -131,12 +139,45 @@ function validateAndNormalizeResult(
         rule2: string;
         description: string;
       }>) ?? [],
+      workflowContradictions: (conflicts?.workflowContradictions as Array<{
+        entity: string;
+        issue: string;
+        suggestion: string;
+      }>) ?? [],
+    },
+    workflowIntegrity: {
+      orphanedStates: (workflowIntegrity?.orphanedStates as Array<{
+        entity: string;
+        state: string;
+        issue: string;
+      }>) ?? [],
+      deadEndStates: (workflowIntegrity?.deadEndStates as Array<{
+        entity: string;
+        state: string;
+        issue: string;
+      }>) ?? [],
+      missingTransitions: (workflowIntegrity?.missingTransitions as string[]) ?? [],
     },
     entityReadiness: {
       ready: (entityReadiness?.ready as boolean) ?? false,
       identifiedEntities: (entityReadiness?.identifiedEntities as string[]) ?? [],
       uncertainEntities: (entityReadiness?.uncertainEntities as string[]) ?? [],
+      dataTypeInconsistencies: (entityReadiness?.dataTypeInconsistencies as string[]) ?? [],
       recommendations: (entityReadiness?.recommendations as string[]) ?? [],
+    },
+    ambiguityDetection: {
+      ambiguousRequirements: (ambiguityDetection?.ambiguousRequirements as Array<{
+        location: string;
+        text: string;
+        issue: string;
+        suggestion: string;
+      }>) ?? [],
+      implicitAssumptions: (ambiguityDetection?.implicitAssumptions as Array<{
+        assumption: string;
+        risk: string;
+        clarificationNeeded: string;
+      }>) ?? [],
+      vaguePhrases: (ambiguityDetection?.vaguePhrases as string[]) ?? [],
     },
     overallAssessment: {
       canProceed: (overallAssessment?.canProceed as boolean) ?? false,
@@ -165,16 +206,30 @@ function getDefaultErrorResult(
       undefinedEntities: [],
       incompleteWorkflows: [],
       missingValidations: [],
+      functionalGaps: [],
     },
     conflicts: {
+      duplicateIds: [],
       requirementConflicts: [],
       ruleConflicts: [],
+      workflowContradictions: [],
+    },
+    workflowIntegrity: {
+      orphanedStates: [],
+      deadEndStates: [],
+      missingTransitions: [],
     },
     entityReadiness: {
       ready: false,
       identifiedEntities: [],
       uncertainEntities: [],
+      dataTypeInconsistencies: [],
       recommendations: [],
+    },
+    ambiguityDetection: {
+      ambiguousRequirements: [],
+      implicitAssumptions: [],
+      vaguePhrases: [],
     },
     overallAssessment: {
       canProceed: false,
@@ -257,6 +312,55 @@ export function mergeSemanticIntoAnalysis(
     if (semanticResult.entityReadiness.uncertainEntities.length > 0) {
       additionalWarnings.push(
         `Uncertain entities that may need clarification: ${semanticResult.entityReadiness.uncertainEntities.join(', ')}`
+      );
+    }
+  }
+
+  // Workflow integrity issues (if present)
+  if (semanticResult.workflowIntegrity) {
+    semanticResult.workflowIntegrity.orphanedStates.forEach((s) => {
+      additionalBlockingIssues.push(
+        `Orphaned state in ${s.entity}: "${s.state}" - ${s.issue}`
+      );
+    });
+    semanticResult.workflowIntegrity.deadEndStates.forEach((s) => {
+      additionalWarnings.push(
+        `Dead-end state in ${s.entity}: "${s.state}" - ${s.issue}`
+      );
+    });
+    if (semanticResult.workflowIntegrity.missingTransitions.length > 0) {
+      additionalWarnings.push(
+        ...semanticResult.workflowIntegrity.missingTransitions.map(
+          (t) => `Missing transition: ${t}`
+        )
+      );
+    }
+  }
+
+  // Ambiguity detection issues (CRITICAL for preventing hallucination)
+  if (semanticResult.ambiguityDetection) {
+    // Ambiguous requirements are blocking - they cause inconsistent implementations
+    if (semanticResult.ambiguityDetection.ambiguousRequirements.length > 0) {
+      semanticResult.ambiguityDetection.ambiguousRequirements.forEach((ar) => {
+        additionalWarnings.push(
+          `⚠️ AMBIGUOUS [${ar.location}]: "${ar.text}" - ${ar.issue}. Suggestion: ${ar.suggestion}`
+        );
+      });
+    }
+
+    // Implicit assumptions are high risk - flag prominently
+    if (semanticResult.ambiguityDetection.implicitAssumptions.length > 0) {
+      semanticResult.ambiguityDetection.implicitAssumptions.forEach((ia) => {
+        additionalWarnings.push(
+          `⚠️ ASSUMPTION: "${ia.assumption}" - Risk: ${ia.risk}. Clarify: ${ia.clarificationNeeded}`
+        );
+      });
+    }
+
+    // Vague phrases should be highlighted
+    if (semanticResult.ambiguityDetection.vaguePhrases.length > 0) {
+      additionalWarnings.push(
+        `Vague phrases found that may cause AI hallucination: ${semanticResult.ambiguityDetection.vaguePhrases.join(', ')}`
       );
     }
   }

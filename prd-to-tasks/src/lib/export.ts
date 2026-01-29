@@ -145,21 +145,12 @@ export function exportTasksToMarkdown(taskSet: TaskSet, options: Partial<ExportO
     lines.push('');
   }
 
-  // Group tasks by module
-  const tasksByModule = new Map<string, ProgrammableTask[]>();
+  // Output tasks in array order (correct development sequence)
+  // DO NOT group by module - that breaks the logical task ordering!
+  lines.push(`## ${tasks[0]?.module || 'Main'}`);
+  lines.push('');
+
   tasks.forEach((task) => {
-    const module = task.module || 'General';
-    if (!tasksByModule.has(module)) {
-      tasksByModule.set(module, []);
-    }
-    tasksByModule.get(module)!.push(task);
-  });
-
-  tasksByModule.forEach((moduleTasks, module) => {
-    lines.push(`## Module: ${module}`);
-    lines.push('');
-
-    moduleTasks.forEach((task) => {
       lines.push(`### ${task.id}: ${task.title}`);
       lines.push('');
       lines.push(`| Property | Value |`);
@@ -231,7 +222,6 @@ export function exportTasksToMarkdown(taskSet: TaskSet, options: Partial<ExportO
       lines.push('---');
       lines.push('');
     });
-  });
 
   return lines.join('\n');
 }

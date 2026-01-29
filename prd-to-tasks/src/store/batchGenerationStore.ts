@@ -148,6 +148,9 @@ export const useBatchGenerationStore = create<BatchGenerationState>()((set, get)
       t.executionMode === 'code-generation' || !t.executionMode
     );
 
+    console.log(`[BatchGeneration] Total tasks: ${tasks.length}, Code tasks: ${codeTasks.length}`);
+    console.log(`[BatchGeneration] Code tasks in order:`, codeTasks.map(t => `${t.id}: ${t.title}`));
+
     let generatedCount = get().generatedCount;
 
     for (let i = 0; i < codeTasks.length; i++) {
@@ -161,7 +164,9 @@ export const useBatchGenerationStore = create<BatchGenerationState>()((set, get)
 
       // Skip already generated tasks
       const currentStatus = get().taskStatusMap[task.id];
+      console.log(`[BatchGeneration] Task ${task.id} status: ${currentStatus || 'none'}`);
       if (currentStatus === 'generated' || currentStatus === 'approved' || currentStatus === 'committed') {
+        console.log(`[BatchGeneration] SKIPPING ${task.id} - already ${currentStatus}`);
         continue;
       }
 
