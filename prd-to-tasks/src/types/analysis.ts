@@ -215,8 +215,14 @@ export interface SemanticAnalysisResult {
     undefinedEntities: string[];
     incompleteWorkflows: string[];
     missingValidations: string[];
+    functionalGaps?: string[];
   };
   conflicts: {
+    duplicateIds?: Array<{
+      id: string;
+      occurrences: string[];
+      description: string;
+    }>;
     requirementConflicts: Array<{
       fr1: string;
       fr2: string;
@@ -227,12 +233,45 @@ export interface SemanticAnalysisResult {
       rule2: string;
       description: string;
     }>;
+    workflowContradictions?: Array<{
+      entity: string;
+      issue: string;
+      suggestion: string;
+    }>;
+  };
+  workflowIntegrity?: {
+    orphanedStates: Array<{
+      entity: string;
+      state: string;
+      issue: string;
+    }>;
+    deadEndStates: Array<{
+      entity: string;
+      state: string;
+      issue: string;
+    }>;
+    missingTransitions: string[];
   };
   entityReadiness: {
     ready: boolean;
     identifiedEntities: string[];
     uncertainEntities: string[];
+    dataTypeInconsistencies?: string[];
     recommendations: string[];
+  };
+  ambiguityDetection?: {
+    ambiguousRequirements: Array<{
+      location: string;
+      text: string;
+      issue: string;
+      suggestion: string;
+    }>;
+    implicitAssumptions: Array<{
+      assumption: string;
+      risk: string;
+      clarificationNeeded: string;
+    }>;
+    vaguePhrases: string[];
   };
   overallAssessment: {
     canProceed: boolean;

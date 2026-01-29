@@ -13,6 +13,7 @@ export interface DBProject {
   createdAt: Date;
   updatedAt: Date;
   prd?: StructuredPRD;
+  rawContent?: string; // Raw PRD content for entity extraction
   entities?: Entity[];
   relationships?: Relationship[];
   erdSchema?: ERDSchema;
@@ -83,6 +84,15 @@ class PRDDatabase extends Dexie {
       recentProjects: '++id, projectId, accessedAt',
       generatedFiles: '++id, projectId, taskId, path, status, generatedAt',
       taskStatus: '++id, projectId, taskId, status, updatedAt',
+    });
+
+    // Version 3: Add compound indexes for efficient lookups
+    this.version(3).stores({
+      projects: '++id, projectId, name, updatedAt',
+      settings: 'key',
+      recentProjects: '++id, projectId, accessedAt',
+      generatedFiles: '++id, projectId, taskId, path, status, generatedAt, [projectId+taskId+path], [projectId+taskId], [projectId+status]',
+      taskStatus: '++id, projectId, taskId, status, updatedAt, [projectId+taskId]',
     });
   }
 }

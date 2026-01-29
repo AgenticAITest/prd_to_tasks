@@ -78,21 +78,67 @@ export function generateTasks(
 
   const tasks: ProgrammableTask[] = [];
 
-  // Generate database migration tasks for each entity
+  // Collect unique screens upfront (needed for multiple task types)
+  const uniqueScreens = new Map<string, Screen>();
+  context.prd.functionalRequirements.forEach((fr) => {
+    fr.screens.forEach((screen) => {
+      if (!uniqueScreens.has(screen.route)) {
+        uniqueScreens.set(screen.route, screen);
+      }
+    });
+  });
+
+  // ==========================================================================
+  // PHASE 1: INFRASTRUCTURE SETUP (must come first)
+  // ==========================================================================
+  if (opts.generateIntegrationTasks) {
+    // Environment setup task (one per project) - FIRST TASK
+    tasks.push(generateEnvironmentSetupTask(context));
+  }
+
+  // ==========================================================================
+  // PHASE 2: DATABASE LAYER
+  // ==========================================================================
   if (opts.generateDatabaseTasks) {
     context.entities.forEach((entity) => {
       tasks.push(generateDatabaseMigrationTask(entity, context));
     });
   }
 
-  // Generate API CRUD tasks for each entity
+  // ==========================================================================
+  // PHASE 3: BACKEND SERVICES & API
+  // ==========================================================================
+  if (opts.generateIntegrationTasks) {
+    // Service layer tasks (one per entity) - BEFORE API tasks
+    context.entities.forEach((entity) => {
+      tasks.push(generateServiceLayerTask(entity, context));
+    });
+  }
+
   if (opts.generateApiTasks) {
+    // API CRUD tasks for each entity
     context.entities.forEach((entity) => {
       tasks.push(...generateAPICrudTasks(entity, context));
     });
   }
 
-  // Generate UI tasks from screens
+  // ==========================================================================
+  // PHASE 4: FRONTEND INFRASTRUCTURE (before UI components)
+  // ==========================================================================
+  if (opts.generateIntegrationTasks) {
+    // API client setup task (one per project)
+    tasks.push(generateAPIClientTask(context));
+
+    // Route configuration task (one per project)
+    tasks.push(generateRouteConfigTask(context, uniqueScreens));
+
+    // Navigation task (one per project)
+    tasks.push(generateNavigationTask(context, uniqueScreens));
+  }
+
+  // ==========================================================================
+  // PHASE 5: UI COMPONENTS
+  // ==========================================================================
   if (opts.generateUiTasks) {
     context.prd.functionalRequirements.forEach((fr) => {
       fr.screens.forEach((screen) => {
@@ -101,7 +147,9 @@ export function generateTasks(
     });
   }
 
-  // Generate validation tasks from business rules
+  // ==========================================================================
+  // PHASE 6: VALIDATION RULES
+  // ==========================================================================
   if (opts.generateValidationTasks) {
     context.prd.functionalRequirements.forEach((fr) => {
       fr.businessRules.forEach((br) => {
@@ -119,54 +167,32 @@ export function generateTasks(
       });
   }
 
-  // Generate test tasks
+  // ==========================================================================
+  // PHASE 7: PAGE COMPOSITION (after UI components are built)
+  // ==========================================================================
+  if (opts.generateIntegrationTasks) {
+    uniqueScreens.forEach((screen) => {
+      tasks.push(generatePageCompositionTask(screen, context, tasks));
+    });
+  }
+
+  // ==========================================================================
+  // PHASE 8: TESTING (at the end)
+  // ==========================================================================
   if (opts.generateTestTasks) {
+    // Entity test tasks (manual)
     context.entities.forEach((entity) => {
       tasks.push(generateEntityTestTask(entity, context));
     });
   }
 
-  // Generate integration/orchestration tasks
   if (opts.generateIntegrationTasks) {
-    // Environment setup task (one per project)
-    tasks.push(generateEnvironmentSetupTask(context));
-
-    // Service layer tasks (one per entity)
-    context.entities.forEach((entity) => {
-      tasks.push(generateServiceLayerTask(entity, context));
-    });
-
-    // API client setup task (one per project)
-    tasks.push(generateAPIClientTask(context));
-
-    // Assembly/Composition tasks - must come BEFORE E2E tests
-    // First, collect unique screens
-    const uniqueScreens = new Map<string, Screen>();
-    context.prd.functionalRequirements.forEach((fr) => {
-      fr.screens.forEach((screen) => {
-        if (!uniqueScreens.has(screen.route)) {
-          uniqueScreens.set(screen.route, screen);
-        }
-      });
-    });
-
-    // Route configuration task (one per project)
-    tasks.push(generateRouteConfigTask(context, uniqueScreens));
-
-    // Navigation task (one per project)
-    tasks.push(generateNavigationTask(context, uniqueScreens));
-
-    // Page composition tasks - one per unique route/screen combination
-    uniqueScreens.forEach((screen) => {
-      tasks.push(generatePageCompositionTask(screen, context, tasks));
-    });
-
     // E2E flow tasks (one per functional requirement) - AFTER pages are built
     context.prd.functionalRequirements.forEach((fr) => {
       tasks.push(generateE2EFlowTask(fr, context));
     });
 
-    // Test setup task (one per project)
+    // Test setup task (one per project) - LAST TASK
     tasks.push(generateTestSetupTask(context));
   }
 
@@ -839,7 +865,9 @@ function generateAPICrudTasks(
   context: TaskGenerationContext
 ): ProgrammableTask[] {
   const tasks: ProgrammableTask[] = [];
-  const dbMigrationId = `TASK-${String(context.entities.indexOf(entity) + 1).padStart(3, '0')}`;
+  // DB migrations start at TASK-002 (after Environment setup at TASK-001)
+  // So entity index 0 → TASK-002, index 1 → TASK-003, etc.
+  const dbMigrationId = `TASK-${String(context.entities.indexOf(entity) + 2).padStart(3, '0')}`;
 
   // Create endpoint
   tasks.push(generateAPIEndpointTask(entity, 'create', dbMigrationId, context));
@@ -1743,10 +1771,11 @@ function generateServiceLayerTask(
   };
 
   // Find the database migration task ID for this entity
+  // DB migrations start at TASK-002 (after Environment setup at TASK-001)
   const dbTaskIndex = context.entities.findIndex(
     (e) => e.name.toLowerCase() === entity.name.toLowerCase()
   );
-  const dbTaskId = `TASK-${String(dbTaskIndex + 1).padStart(3, '0')}`;
+  const dbTaskId = `TASK-${String(dbTaskIndex + 2).padStart(3, '0')}`;
 
   return {
     id: generateTaskId(),
@@ -2628,88 +2657,47 @@ function toKebabCase(str: string): string {
 export function exportTasksToMarkdown(taskSet: TaskSet): string {
   const lines: string[] = [];
 
-  lines.push(`# Development Tasks`);
+  lines.push(`# Generated Tasks`);
   lines.push('');
-  lines.push(`Generated: ${taskSet.generatedAt.toISOString()}`);
-  lines.push(`Total Tasks: ${taskSet.summary.totalTasks}`);
-  lines.push('');
-  lines.push('## Summary');
-  lines.push('');
-  lines.push('### By Tier');
-  lines.push(`- T1 (Simple): ${taskSet.summary.tierBreakdown?.T1 ?? 0}`);
-  lines.push(`- T2 (Standard): ${taskSet.summary.tierBreakdown?.T2 ?? 0}`);
-  lines.push(`- T3 (Complex): ${taskSet.summary.tierBreakdown?.T3 ?? 0}`);
-  lines.push(`- T4 (Architecture): ${taskSet.summary.tierBreakdown?.T4 ?? 0}`);
-  lines.push('');
-  lines.push('### By Type');
-  if (taskSet.summary.typeBreakdown) {
-    Object.entries(taskSet.summary.typeBreakdown).forEach(([type, count]) => {
-      lines.push(`- ${type}: ${count}`);
-    });
-  }
-  lines.push('');
-  lines.push('---');
+  lines.push(`## ${taskSet.tasks[0]?.module || 'Main'}`);
   lines.push('');
 
-  // Group tasks by module
-  const tasksByModule = new Map<string, ProgrammableTask[]>();
+  // Output tasks in their array order (which is the correct logical development order)
+  // DO NOT group by module - that breaks the ordering!
   taskSet.tasks.forEach((task) => {
-    const module = task.module || 'General';
-    if (!tasksByModule.has(module)) {
-      tasksByModule.set(module, []);
-    }
-    tasksByModule.get(module)!.push(task);
-  });
-
-  tasksByModule.forEach((tasks, module) => {
-    lines.push(`## Module: ${module}`);
+    lines.push(`### ${task.id}: ${task.title}`);
+    lines.push('');
+    lines.push(`**Type:** ${task.type} | **Tier:** ${task.tier} | **Priority:** ${task.priority}`);
     lines.push('');
 
-    tasks.forEach((task) => {
-      lines.push(`### ${task.id}: ${task.title}`);
-      lines.push('');
-      lines.push(`**Type:** ${task.type} | **Tier:** ${task.tier} | **Priority:** ${task.priority} | **Complexity:** ${task.estimatedComplexity}`);
-      lines.push('');
+    lines.push(`**Objective:** ${task.specification.objective}`);
+    lines.push('');
 
-      if (task.dependencies.length > 0) {
-        lines.push(`**Dependencies:** ${task.dependencies.join(', ')}`);
-        lines.push('');
-      }
+    lines.push(`**Context:** ${task.specification.context}`);
+    lines.push('');
 
-      lines.push('#### Objective');
-      lines.push(task.specification.objective);
-      lines.push('');
-
-      lines.push('#### Context');
-      lines.push(task.specification.context);
-      lines.push('');
-
-      lines.push('#### Requirements');
-      task.specification.requirements.forEach((req) => {
-        lines.push(`- ${req}`);
-      });
-      lines.push('');
-
-      lines.push('#### Acceptance Criteria');
-      task.acceptanceCriteria.forEach((ac) => {
-        lines.push(`- [ ] ${ac}`);
-      });
-      lines.push('');
-
-      if (task.testCases && task.testCases.length > 0) {
-        lines.push('#### Test Cases');
-        task.testCases.forEach((tc) => {
-          lines.push(`- **${tc.name}** (${tc.type})`);
-          lines.push(`  - Given: ${tc.given}`);
-          lines.push(`  - When: ${tc.when}`);
-          lines.push(`  - Then: ${tc.then}`);
-        });
-        lines.push('');
-      }
-
-      lines.push('---');
-      lines.push('');
+    lines.push('**Requirements:**');
+    task.specification.requirements.forEach((req) => {
+      lines.push(`- ${req}`);
     });
+    lines.push('');
+
+    lines.push('**Acceptance Criteria:**');
+    task.acceptanceCriteria.forEach((ac) => {
+      lines.push(`- ${ac}`);
+    });
+    lines.push('');
+
+    if (task.testCases && task.testCases.length > 0) {
+      lines.push('**Test Cases:**');
+      task.testCases.forEach((tc) => {
+        lines.push(`- **${tc.name}:** Given ${tc.given}, when ${tc.when}, then ${tc.then}`);
+      });
+      lines.push('');
+    }
+
+    lines.push('---');
+    lines.push('');
   });
 
   return lines.join('\n');

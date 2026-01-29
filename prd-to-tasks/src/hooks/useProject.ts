@@ -99,6 +99,11 @@ export function useProject() {
           }
         }
 
+        // Restore raw content for entity extraction
+        if (projectData.rawContent) {
+          prdStore.setRawContent(projectData.rawContent);
+        }
+
         // Restore entities
         if (projectData.entities && projectData.entities.length > 0) {
           entityStore.clearEntities();
@@ -302,6 +307,7 @@ export function useProject() {
         updatedAt: new Date(),
         files: projectStore.files,
         prd: prdStore.prd || undefined,
+        rawContent: prdStore.rawContent || undefined, // Save raw content for entity extraction
         entities: entityStore.entities,
         relationships: entityStore.relationships,
         erdSchema: erdStore.schema || undefined,
