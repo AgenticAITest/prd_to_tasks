@@ -165,7 +165,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   return (
   <>
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-5xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -178,7 +178,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           onValueChange={setSettingsTab}
           className="flex-1 overflow-hidden flex flex-col"
         >
-          <TabsList className="grid grid-cols-6 w-full">
+          <TabsList className="grid grid-cols-7 w-full">
             <TabsTrigger value="api-keys">API Keys</TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
             <TabsTrigger value="prompts">Prompts</TabsTrigger>
