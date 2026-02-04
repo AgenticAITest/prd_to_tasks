@@ -13,6 +13,10 @@ export interface Project {
   updatedAt: Date;
   // Optional attached architecture guide file id
   architectureGuideFileId?: string;
+  // Coder workspace configuration
+  coderWorkspaceName?: string;
+  coderGitRepo?: string;
+  coderWorkspaceCreated?: boolean;
 }
 
 interface ProjectState {

@@ -80,16 +80,33 @@ export function useProject() {
           throw new Error('Project not found');
         }
 
+        console.log('[Load] Project data from IndexedDB:', {
+          coderWorkspaceName: projectData.coderWorkspaceName,
+          coderGitRepo: projectData.coderGitRepo,
+          coderWorkspaceCreated: projectData.coderWorkspaceCreated,
+        });
+
         // Restore project state
         projectStore.loadProject(
           {
             id: projectData.projectId,
             name: projectData.name,
+            description: projectData.description,
             createdAt: projectData.createdAt,
             updatedAt: projectData.updatedAt,
+            architectureGuideFileId: (projectData as any).architectureGuideFileId,
+            coderWorkspaceName: projectData.coderWorkspaceName,
+            coderGitRepo: projectData.coderGitRepo,
+            coderWorkspaceCreated: projectData.coderWorkspaceCreated,
           },
           projectData.files || []
         );
+        
+        console.log('[Load] Project loaded into store:', {
+          coderWorkspaceName: useProjectStore.getState().project?.coderWorkspaceName,
+          coderGitRepo: useProjectStore.getState().project?.coderGitRepo,
+          coderWorkspaceCreated: useProjectStore.getState().project?.coderWorkspaceCreated,
+        });
 
         // Restore PRD if exists
         if (projectData.prd) {
@@ -293,7 +310,8 @@ export function useProject() {
   );
 
   const saveCurrentProject = useCallback(async () => {
-    const project = projectStore.project;
+    // Get fresh state from stores to avoid stale closure values
+    const project = useProjectStore.getState().project;
     if (!project) {
       throw new Error('No project to save');
     }
@@ -303,27 +321,42 @@ export function useProject() {
       const projectData: DBProject = {
         projectId: project.id,
         name: project.name,
+        description: project.description,
         createdAt: project.createdAt,
         updatedAt: new Date(),
-        files: projectStore.files,
-        prd: prdStore.prd || undefined,
-        rawContent: prdStore.rawContent || undefined, // Save raw content for entity extraction
-        entities: entityStore.entities,
-        relationships: entityStore.relationships,
-        erdSchema: erdStore.schema || undefined,
-        taskSet: taskStore.taskSet || undefined,
-        semanticAnalysisResult: prdStore.semanticAnalysisResult || undefined,
+        files: useProjectStore.getState().files,
+        prd: usePRDStore.getState().prd || undefined,
+        rawContent: usePRDStore.getState().rawContent || undefined, // Save raw content for entity extraction
+        entities: useEntityStore.getState().entities,
+        relationships: useEntityStore.getState().relationships,
+        erdSchema: useERDStore.getState().schema || undefined,
+        taskSet: useTaskStore.getState().taskSet || undefined,
+        semanticAnalysisResult: usePRDStore.getState().semanticAnalysisResult || undefined,
         // Persist phase progress so we can restore where user left off
-        currentPhase: projectStore.currentPhase,
-        phaseStatus: projectStore.phaseStatus,
+        currentPhase: useProjectStore.getState().currentPhase,
+        phaseStatus: useProjectStore.getState().phaseStatus,
+        // Save architecture guide and Coder workspace configuration
+        ...(project.architectureGuideFileId && { architectureGuideFileId: project.architectureGuideFileId } as any),
+        coderWorkspaceName: project.coderWorkspaceName,
+        coderGitRepo: project.coderGitRepo,
+        coderWorkspaceCreated: project.coderWorkspaceCreated,
       };
 
+      console.log('[Save] Saving project data to IndexedDB:', {
+        projectId: projectData.projectId,
+        coderWorkspaceName: projectData.coderWorkspaceName,
+        coderGitRepo: projectData.coderGitRepo,
+        coderWorkspaceCreated: projectData.coderWorkspaceCreated,
+      });
+
       await saveProject(projectData);
-      projectStore.setDirty(false);
+      
+      console.log('[Save] Project saved successfully');
+      useProjectStore.getState().setDirty(false);
     } finally {
       setIsLoading(false);
     }
-  }, [projectStore, prdStore, entityStore, erdStore, taskStore]);
+  }, []);
 
   const deleteCurrentProject = useCallback(async () => {
     const project = projectStore.project;

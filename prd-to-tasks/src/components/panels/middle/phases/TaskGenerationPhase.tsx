@@ -13,6 +13,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { useTaskStore } from '@/store/taskStore';
 import { useProjectStore } from '@/store/projectStore';
 import { useUIStore } from '@/store/uiStore';
@@ -69,6 +78,9 @@ export function TaskGenerationPhase() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [tierFilter, setTierFilter] = useState<string>('all');
   const [promptCopied, setPromptCopied] = useState(false);
+  const [showCoderDialog, setShowCoderDialog] = useState(false);
+  const [coderWorkspaceName, setCoderWorkspaceName] = useState('');
+  const [coderGitRepo, setCoderGitRepo] = useState('');
 
   const {
     tasks,
@@ -85,7 +97,7 @@ export function TaskGenerationPhase() {
   } = useTaskStore();
 
   const { saveCurrentProject } = useProject();
-  const { setPhaseStatus, addFile, setArchitectureGuide, getArchitectureGuide, getFilesByType, clearArchitectureGuide } = useProjectStore();
+  const { setPhaseStatus, addFile, setArchitectureGuide, getArchitectureGuide, getFilesByType, clearArchitectureGuide, project } = useProjectStore();
   const { openModal } = useUIStore();
   const prdStore = usePRDStore();
   const entityStore = useEntityStore();
@@ -382,6 +394,76 @@ const controller = new AbortController();
     setTimeout(() => setPromptCopied(false), 2000);
   };
 
+  const handleOpenCoderDialog = () => {
+    // Set default workspace name from project name
+    const defaultName = project?.name
+      ? project.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+      : 'workspace';
+    
+    console.log('[Coder] Opening dialog with project:', {
+      coderWorkspaceName: project?.coderWorkspaceName,
+      coderGitRepo: project?.coderGitRepo,
+      coderWorkspaceCreated: project?.coderWorkspaceCreated,
+    });
+    
+    // Pre-fill with saved values if they exist, otherwise use defaults
+    setCoderWorkspaceName(project?.coderWorkspaceName || defaultName);
+    setCoderGitRepo(project?.coderGitRepo || '');
+    setShowCoderDialog(true);
+  };
+
+  const handleCreateCoderWorkspace = async () => {
+    if (!coderWorkspaceName.trim()) {
+      toast.error('Workspace name is required');
+      return;
+    }
+    if (!coderGitRepo.trim()) {
+      toast.error('Git repository URL is required');
+      return;
+    }
+
+    // Save coder workspace configuration to the current project
+    const { updateProject } = useProjectStore.getState();
+    const updateData = {
+      coderWorkspaceName: coderWorkspaceName.trim(),
+      coderGitRepo: coderGitRepo.trim(),
+      coderWorkspaceCreated: true,
+    };
+    
+    console.log('[Coder] Updating project with:', updateData);
+    updateProject(updateData);
+    
+    // Verify the update
+    const updatedProject = useProjectStore.getState().project;
+    console.log('[Coder] Project after update:', {
+      coderWorkspaceName: updatedProject?.coderWorkspaceName,
+      coderGitRepo: updatedProject?.coderGitRepo,
+      coderWorkspaceCreated: updatedProject?.coderWorkspaceCreated,
+    });
+
+    // Persist to IndexedDB
+    try {
+      await saveCurrentProject();
+      console.log('[Coder] Workspace configuration saved to IndexedDB');
+      toast.success('Workspace configuration saved');
+    } catch (err) {
+      console.error('[Coder] Failed to save workspace configuration:', err);
+      toast.warning('Workspace will be created but configuration may not be saved');
+    }
+
+    // Construct the Coder URL with form parameters
+    const encodedRepo = encodeURIComponent(coderGitRepo.trim());
+    const encodedName = encodeURIComponent(coderWorkspaceName.trim());
+    const coderUrl = `https://coder.neo-fusion.com/templates/coder/node-js-docker/workspace?mode=auto&name=${encodedName}&param.git_repo=${encodedRepo}`;
+    
+    // Open in new tab
+    window.open(coderUrl, '_blank', 'noopener,noreferrer');
+    
+    // Close dialog
+    setShowCoderDialog(false);
+    toast.success('Opening Coder workspace...');
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -485,7 +567,6 @@ const controller = new AbortController();
               )}
               {isGenerating ? 'Generating...' : 'Generate Tasks'}
             </Button>
-
             {tasks.length > 0 && (
               <>
                 <Button onClick={handleExport}>
@@ -522,6 +603,10 @@ const controller = new AbortController();
                 </div> */}
               </>
             )}
+            {/* Create Coder Workspace button */}
+            <Button onClick={handleOpenCoderDialog}>
+              Coder Workspace
+            </Button>
           </div>
         </div>
       </div>
@@ -852,6 +937,78 @@ const controller = new AbortController();
           </CardContent>
         </Card>
       )}
+
+      {/* Coder Workspace Creation Dialog */}
+      <Dialog open={showCoderDialog} onOpenChange={setShowCoderDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              {project?.coderWorkspaceCreated ? 'Workspace Configuration' : 'Create Development Workspace'}
+            </DialogTitle>
+            <DialogDescription>
+              {project?.coderWorkspaceCreated 
+                ? 'View your workspace configuration. Click "Open Workspace" to access your development environment.'
+                : 'Configure your development workspace. The workspace will be created with Node.js and Docker template.'
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="workspace-name">Workspace Name</Label>
+              <Input
+                id="workspace-name"
+                placeholder="my-project-workspace"
+                value={coderWorkspaceName}
+                onChange={(e) => setCoderWorkspaceName(e.target.value)}
+                readOnly={project?.coderWorkspaceCreated}
+                className={project?.coderWorkspaceCreated ? 'bg-muted' : ''}
+              />
+              <p className="text-xs text-muted-foreground">
+                Lowercase letters, numbers, and hyphens only
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="git-repo">Base App</Label>
+              <Select value={coderGitRepo} onValueChange={setCoderGitRepo} disabled={project?.coderWorkspaceCreated}>
+                <SelectTrigger id="git-repo">
+                  <SelectValue placeholder="Select base application" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="https://github.com/arief-nfi/base-app-multitenant.git">
+                    base-app-multitenant
+                  </SelectItem>
+                  <SelectItem value="https://github.com/arief-nfi/pern-stack.git">
+                    pern-stack
+                  </SelectItem>
+                  <SelectItem value="https://github.com/arief-nfi/next-nest-stack.git">
+                    next-nest-stack
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Choose base app template
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCoderDialog(false)}>
+              Cancel
+            </Button>
+            {project?.coderWorkspaceCreated ? (
+              <Button onClick={() => {
+                window.open('https://coder.neo-fusion.com/workspaces?filter=owner%3Ame%20name%3A'+encodeURIComponent(project.coderWorkspaceName || ''), '_blank', 'noopener,noreferrer');
+                setShowCoderDialog(false);
+              }}>
+                Open Workspace
+              </Button>
+            ) : (
+              <Button onClick={handleCreateCoderWorkspace}>
+                Create Workspace
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

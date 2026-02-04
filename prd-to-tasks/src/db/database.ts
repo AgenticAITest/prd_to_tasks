@@ -25,6 +25,14 @@ export interface DBProject {
   phaseStatus?: Record<number, 'locked' | 'active' | 'completed' | 'has-issues'>;
 
   files?: ProjectFile[];
+  
+  // Optional attached architecture guide file id
+  architectureGuideFileId?: string;
+  
+  // Coder workspace configuration
+  coderWorkspaceName?: string;
+  coderGitRepo?: string;
+  coderWorkspaceCreated?: boolean;
 }
 
 export interface DBSettings {
@@ -101,13 +109,29 @@ export const db = new PRDDatabase();
 
 // Helper functions
 export async function saveProject(project: DBProject): Promise<number> {
+  console.log('[DB] saveProject called with:', {
+    projectId: project.projectId,
+    coderWorkspaceName: project.coderWorkspaceName,
+    coderGitRepo: project.coderGitRepo,
+    coderWorkspaceCreated: project.coderWorkspaceCreated,
+  });
+  
   const existing = await db.projects.where('projectId').equals(project.projectId).first();
 
   if (existing) {
-    await db.projects.update(existing.id!, {
+    const updateData = {
+      ...existing,
       ...project,
+      id: existing.id,
       updatedAt: new Date(),
+    };
+    console.log('[DB] Updating existing project with:', {
+      projectId: updateData.projectId,
+      coderWorkspaceName: updateData.coderWorkspaceName,
+      coderGitRepo: updateData.coderGitRepo,
+      coderWorkspaceCreated: updateData.coderWorkspaceCreated,
     });
+    await db.projects.put(updateData);
     return existing.id!;
   }
 
@@ -119,7 +143,14 @@ export async function saveProject(project: DBProject): Promise<number> {
 }
 
 export async function loadProject(projectId: string): Promise<DBProject | undefined> {
-  return await db.projects.where('projectId').equals(projectId).first();
+  const result = await db.projects.where('projectId').equals(projectId).first();
+  console.log('[DB] loadProject result:', {
+    projectId: result?.projectId,
+    coderWorkspaceName: result?.coderWorkspaceName,
+    coderGitRepo: result?.coderGitRepo,
+    coderWorkspaceCreated: result?.coderWorkspaceCreated,
+  });
+  return result;
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
